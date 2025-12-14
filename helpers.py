@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import base64
 import csv
+import html as html_escape
+import json
+import os
 import random
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
+
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-import re
-import html as html_escape
-import json
-import base64
-import os
 
 EXCEL_PATH = Path("Validados_V3.xlsx")
 SHEET_NAME = "1 dic - 8 dic"
@@ -79,8 +80,7 @@ def append_skip(record: Dict[str, str]) -> None:
 
 def load_dataset() -> pd.DataFrame:
     df = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME, dtype=str)
-    df = df.fillna("")
-    return df
+    return df.fillna("")
 
 
 def ensure_review_csv() -> None:
@@ -114,11 +114,11 @@ def persist_excel(df: pd.DataFrame) -> None:
         df.to_excel(tmp_path, sheet_name=SHEET_NAME, index=False)
         Path(tmp_path).replace(EXCEL_PATH)
     finally:
-        try:
-            if os.path.exists(tmp_path):
+        if os.path.exists(tmp_path):
+            try:
                 os.remove(tmp_path)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
 
 def next_queue_record(df: pd.DataFrame) -> Dict[str, str]:
@@ -220,7 +220,7 @@ def review_form(record: Dict[str, str]):
     with st.form("review_form", clear_on_submit=True):
         status = st.selectbox(
             "Estado final",
-            ["Correcto", "Falso positivo", "Falso negativo", "Necesita seguimiento"],
+            ["OK", "KO MYM", "KO AGENTE", "DUDA"],
         )
         reviewer_note = st.text_input(
             "Comentario de revisión",
@@ -239,15 +239,17 @@ def review_form(record: Dict[str, str]):
 def inject_styles() -> None:
     css = """
     <style>
-    .mymail-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    .mymail-header{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 0;background:var(--background-color,#fff);box-shadow:0 2px 8px rgba(0,0,0,0.08)}
     .mymail-header .logo{height:36px;margin-right:8px}
-    .mymail-header .title{font-size:20px;font-weight:700}
-    .mymail-header .top-fields{margin-left:16px;display:flex;gap:12px}
-    .mymail-header .field{font-size:13px}
+    .mymail-header .title{font-size:20px;font-weight:700;margin-right:12px}
+    .mymail-header .top-fields{margin-left:8px;display:flex;flex-wrap:wrap;gap:12px}
+    .mymail-header .field{font-size:13px;padding:2px 8px;border-radius:6px;background:#f5f7fb}
     .mymail-overlay{display:none;position:fixed;inset:0;align-items:center;justify-content:center;z-index:9999;background:rgba(0,0,0,0.45);flex-direction:column}
     .mymail-spinner{width:48px;height:48px;border-radius:50%;border:6px solid rgba(255,255,255,0.2);border-top-color:white;animation:mymail-spin 1s linear infinite;margin-bottom:8px}
     @keyframes mymail-spin{to{transform:rotate(360deg)}}
     .mymail-overlay-text{color:white;font-size:16px}
+    body.mymail-locked{pointer-events:none;user-select:none;}
+    body.mymail-locked #mymail-overlay{pointer-events:all}
     </style>
     """
     try:
