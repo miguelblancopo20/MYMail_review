@@ -1,0 +1,13 @@
+.git
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+node_modules
+build
+dist
+app/node_modules
+revisiones.csv
+descartes.csv
