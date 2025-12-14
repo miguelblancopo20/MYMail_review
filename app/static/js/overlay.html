@@ -1,0 +1,30 @@
+<div id="mymail-overlay" class="mymail-overlay">
+  <div class="mymail-spinner"></div>
+  <div class="mymail-overlay-text">Procesando...</div>
+</div>
+<script>
+(function() {
+    const TARGET_TEXTS = ["Guardar revisión y pasar al siguiente", "Saltar sin guardar"];
+    const showOverlay = () => {
+        const overlay = document.getElementById('mymail-overlay');
+        if (overlay) overlay.style.display = 'flex';
+    };
+
+    const bindButtons = () => {
+        const buttons = Array.from(document.querySelectorAll('button'))
+            .filter(btn => TARGET_TEXTS.includes(btn.innerText.trim()));
+        buttons.forEach(btn => {
+            if (btn.dataset.mymailBound === '1') return;
+            btn.dataset.mymailBound = '1';
+            btn.addEventListener('click', () => {
+                showOverlay();
+                buttons.forEach(b => b.disabled = true);
+            });
+        });
+    };
+
+    const observer = new MutationObserver(bindButtons);
+    observer.observe(document.body, { childList: true, subtree: true });
+    bindButtons();
+})();
+</script>

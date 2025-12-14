@@ -14,238 +14,8 @@ import re
 import html as html_escape
 import json
 import base64
-
-
-def inject_styles() -> None:
-    """Inyecta estilos CSS para mejorar contraste y legibilidad."""
-    st.markdown(
-        """
-        <style>
-        /* Fuente y fondo global */
-        :root { --mymail-font: 'Inter', 'Segoe UI', Arial, sans-serif; }
-        html, body, [class^="css"], .stApp {
-            font-family: var(--mymail-font) !important;
-            background-color: #f6f7f9 !important;
-            color: #0b1724 !important;
-            font-size: 14px;
-        }
-
-        /* Ajuste de la columna principal para dejar espacio al header sticky */
-        .stApp > .main .block-container {
-            padding-top: 90px;
-        }
-
-        /* Entradas, textareas y selects */
-        input[type='text'], textarea, select {
-            background-color: #ffffff !important;
-            color: #0b1724 !important;
-            border: 1px solid #d1d5db !important;
-            border-radius: 6px !important;
-            padding: 6px 8px !important;
-            font-family: var(--mymail-font) !important;
-            font-size: 14px !important;
-        }
-
-        /* Botones */
-        .stButton>button, button[role='button'] {
-            background-color: #0b5fff !important;
-            color: #ffffff !important;
-            border: none !important;
-            border-radius: 6px !important;
-            padding: 8px 12px !important;
-            font-family: var(--mymail-font) !important;
-        }
-
-        /* Métricas y textos */
-        .stMetric, .stMetric > div { color: #0b1724 !important; font-family: var(--mymail-font) !important; }
-        h1, h2, h3, .stCaption, label { color: #0b1724 !important; font-family: var(--mymail-font) !important; }
-        label { font-size:14px; }
-
-        /* Cabecera: logo y título */
-        .mymail-header {
-            display:flex;
-            align-items:center;
-            gap:12px;
-            position: sticky;
-            top: 0;
-            background-color: #f6f7f9;
-            z-index: 9999;
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(0,0,0,0.06);
-        }
-        .mymail-header .logo { height:56px; width:auto; }
-        .mymail-header .title { margin:0; padding:0; font-size:28px; font-weight:700; color:#0b1724; }
-        .mymail-header .top-fields { margin-left: 24px; display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
-        .mymail-header .top-fields .field { font-size:14px; color:#0b1724; background:#fff; padding:6px 8px; border-radius:6px; border:1px solid #e2e8f0; }
-
-        /* Overlay de carga infinito */
-        .mymail-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(255, 255, 255, 0.72);
-            z-index: 12000;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .mymail-spinner {
-            width: 54px;
-            height: 54px;
-            border: 6px solid #dbeafe;
-            border-top-color: #0b5fff;
-            border-radius: 50%;
-            animation: mymail-spin 1s linear infinite;
-        }
-        @keyframes mymail-spin { to { transform: rotate(360deg); } }
-        .mymail-overlay-text { font-size: 16px; font-weight: 600; color: #0b1724; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def inject_overlay() -> None:
-    """Inserta overlay de carga y JS para bloquear acciones durante envíos."""
-    st.markdown(
-        """
-        <div id="mymail-overlay" class="mymail-overlay">
-            <div class="mymail-spinner"></div>
-            <div class="mymail-overlay-text">Procesando...</div>
-        </div>
-        <script>
-        (function() {
-            const TARGET_TEXTS = ["Guardar revisión y pasar al siguiente", "Saltar sin guardar"];
-            const showOverlay = () => {
-                const overlay = document.getElementById('mymail-overlay');
-                if (overlay) {
-                    overlay.style.display = 'flex';
-                }
-            };
-
-            const bindButtons = () => {
-                const buttons = Array.from(document.querySelectorAll('button'))
-                    .filter(btn => TARGET_TEXTS.includes(btn.innerText.trim()));
-                buttons.forEach(btn => {
-                    if (btn.dataset.mymailBound === '1') return;
-                    btn.dataset.mymailBound = '1';
-                    btn.addEventListener('click', () => {
-                        showOverlay();
-                        buttons.forEach(b => b.disabled = true);
-                    });
-                });
-            };
-
-            const observer = new MutationObserver(bindButtons);
-            observer.observe(document.body, { childList: true, subtree: true });
-            bindButtons();
-        })();
-        </script>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def format_timestamp(value: str) -> str:
-    """Try to parse a timestamp string and return formatted 'YYYY-mm-dd HH:MM'."""
-    if not value:
-        return ""
-    try:
-        dt = pd.to_datetime(value, errors="coerce")
-        if pd.isna(dt):
-            return str(value)
-        return dt.strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        return str(value)
-
-EXCEL_PATH = Path("Validados_V3.xlsx")
-SHEET_NAME = "1 dic - 8 dic"
-REVIEW_CSV = Path("revisiones.csv")
-
-BASE_FIELDS: List[str] = [
-    "@timestamp",
-    "Validado",
-    "Motivo",
-    "Comentario",
-    "Documento",
-    "MatriculaAsesor",
-    "PageName",
-    "IdCorreo",
-    "Automatismo",
-    "Segmento",
-    "Location",
-    "Sublocation",
-    "Subject",
-    "Question",
-    "MailToAgent",
-    "Faltan datos?",
-    "Comentario revisión",
-]
-
-REVIEW_FIELDS: List[str] = BASE_FIELDS + [
-    "Estado revisión",
-    "Nota de revisión",
-    "Nota interna",
-    "Fecha de revisión",
-]
-
-SKIP_CSV = Path("descartes.csv")
-
-
-def ensure_skip_csv() -> None:
-    if SKIP_CSV.exists():
-        return
-    with SKIP_CSV.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=BASE_FIELDS + ["Fecha descartado"]) 
-        writer.writeheader()
-
-
-def append_skip(record: Dict[str, str]) -> None:
-    ensure_skip_csv()
-    row = {k: record.get(k, "") for k in BASE_FIELDS}
-    row["Fecha descartado"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    with SKIP_CSV.open("a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=BASE_FIELDS + ["Fecha descartado"]) 
-        writer.writerow(row)
-
-
-def load_dataset() -> pd.DataFrame:
-    """Lee el Excel como DataFrame, devolviendo strings y sin nulos."""
-    df = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME, dtype=str)
-    df = df.fillna("")
-    return df
-
-
-def ensure_review_csv() -> None:
-    if REVIEW_CSV.exists():
-        return
-    with REVIEW_CSV.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=REVIEW_FIELDS)
-        writer.writeheader()
-
-
-def append_review(record: Dict[str, str], review_status: str, reviewer_note: str, internal_note: str) -> None:
-    ensure_review_csv()
-    payload = {key: record.get(key, "") for key in BASE_FIELDS}
-    payload.update(
-        {
-            "Estado revisión": review_status,
-            "Nota de revisión": reviewer_note,
-            "Nota interna": internal_note,
-            "Fecha de revisión": datetime.now(timezone.utc).isoformat(),
-        }
-    )
-    with REVIEW_CSV.open("a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=REVIEW_FIELDS)
-        writer.writerow(payload)
-
-
-def persist_excel(df: pd.DataFrame) -> None:
-    """Guarda el DataFrame en el Excel original usando un archivo temporal."""
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        df.to_excel(tmp.name, sheet_name=SHEET_NAME, index=False)
-    Path(tmp.name).replace(EXCEL_PATH)
+import os
+from helpers import *
 
 
 def next_queue_record(df: pd.DataFrame) -> Dict[str, str]:
@@ -277,14 +47,17 @@ def layout_sidebar(df: pd.DataFrame) -> None:
 def layout_record(record: Dict[str, str]) -> None:
     st.subheader("Acciones Agente")
 
-    # Segunda fila: Validado por agente | Motivo
-    second_cols = st.columns(2)
+    # Segunda fila: Validado por agente | Motivo | Comentario
+    second_cols = st.columns([1, 1, 1])
     with second_cols[0]:
         v = html_escape.escape(record.get("Validado", ""))
         components.html(f"<label>Validado por agente</label><input type='text' readonly value='{v}' style='width:100%; font-family: Arial, sans-serif; font-size:14px;'>", height=48)
     with second_cols[1]:
         v = html_escape.escape(record.get("Motivo", ""))
         components.html(f"<label>Motivo</label><input type='text' readonly value='{v}' style='width:100%; font-family: Arial, sans-serif; font-size:14px;'>", height=48)
+    with second_cols[2]:
+        v = html_escape.escape(record.get("Comentario", ""))
+        components.html(f"<label>Comentario</label><input type='text' readonly value='{v}' style='width:100%; font-family: Arial, sans-serif; font-size:14px;'>", height=48)
 
     st.markdown("---")
     st.subheader("Datos del correo")
@@ -413,41 +186,50 @@ def main():
     """
     st.markdown(header_html, unsafe_allow_html=True)
     st.caption("Revisa el feedback del agente para analizar mejoras sobre la solución")
-
-    if not st.session_state.current:
-        st.success("No quedan filas pendientes en el Excel. ¡Buen trabajo!")
-        return
+    # Inject overlay JS (from static file)
+    inject_overlay()
 
     layout_record(st.session_state.current)
     submitted, skip, status, reviewer_note, internal_note = review_form(st.session_state.current)
 
     if skip:
-        # Guardar registro descartado en CSV y eliminar fila del Excel
-        append_skip(st.session_state.current)
-        idx = st.session_state.get("current_idx")
-        if idx is not None:
-            if idx in st.session_state.df.index:
-                st.session_state.df = st.session_state.df.drop(index=idx)
-                persist_excel(st.session_state.df)
-            else:
-                # índice ya no existe en el DataFrame (posible duplicado); ignorar
-                pass
-        st.session_state.current = next_queue_record(st.session_state.df)
+        # Mostrar spinner mientras se procesa el salto y se carga la siguiente fila
+        with st.spinner("Descartando registro y cargando siguiente..."):
+            append_skip(st.session_state.current)
+            idx = st.session_state.get("current_idx")
+            if idx is not None:
+                if idx in st.session_state.df.index:
+                    st.session_state.df = st.session_state.df.drop(index=idx)
+                    persist_excel(st.session_state.df)
+                else:
+                    # índice ya no existe en el DataFrame (posible duplicado); ignorar
+                    pass
+                # Eliminar cualquier referencia al índice descartado en la cola
+                if "queue" in st.session_state:
+                    st.session_state.queue = [i for i in st.session_state.queue if i != idx]
+            st.session_state.current = next_queue_record(st.session_state.df)
         st.success("Fila descartada y registrada en descartes.csv")
+        st.session_state["scroll_top"] = True
         return
 
     if submitted:
-        append_review(st.session_state.current, status, reviewer_note, internal_note)
-        idx = st.session_state.get("current_idx")
-        if idx is not None:
-            if idx in st.session_state.df.index:
-                st.session_state.df = st.session_state.df.drop(index=idx)
-                persist_excel(st.session_state.df)
-            else:
-                # índice ya no existe en el DataFrame (posible duplicado); ignorar
-                pass
-        st.session_state.current = next_queue_record(st.session_state.df)
+        # Mostrar spinner mientras se guarda la revisión y se carga la siguiente fila
+        with st.spinner("Guardando revisión y cargando siguiente..."):
+            append_review(st.session_state.current, status, reviewer_note, internal_note)
+            idx = st.session_state.get("current_idx")
+            if idx is not None:
+                if idx in st.session_state.df.index:
+                    st.session_state.df = st.session_state.df.drop(index=idx)
+                    persist_excel(st.session_state.df)
+                else:
+                    # índice ya no existe en el DataFrame (posible duplicado); ignorar
+                    pass
+                # Eliminar cualquier referencia al índice guardado en la cola
+                if "queue" in st.session_state:
+                    st.session_state.queue = [i for i in st.session_state.queue if i != idx]
+            st.session_state.current = next_queue_record(st.session_state.df)
         st.success("Revisión guardada y fila eliminada del Excel.")
+        st.session_state["scroll_top"] = True
         return
 
 
