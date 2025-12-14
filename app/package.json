@@ -1,0 +1,11 @@
+{
+  "name": "mymail-front",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "echo \"Run a dev server (e.g. serve or http-server) in the app/public folder\"",
+    "build": "echo \"Add your build step here\""
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -25,3 +25,20 @@ Interfaz en Streamlit para revisar las filas del fichero `Validados_V3.xlsx` (ho
 
 - `revisiones.csv`: histórico de las revisiones con fecha UTC, estado final y comentarios.
 - `Validados_V3.xlsx`: se actualiza en cada guardado, eliminando la fila revisada de la hoja **1 dic - 8 dic**.
+
+## Depuración y ejecución desde VS Code
+
+- Recomendado: ejecuta la app con Streamlit, no con `python app.py` (este último genera advertencias y `st.session_state` no funciona correctamente).
+- Desde PowerShell (entorno virtual activo):
+
+```powershell
+streamlit run app.py
+```
+
+- Si prefieres usar el intérprete del venv directamente:
+
+```powershell
+& .\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+- Hay una configuración de lanzamiento en `.vscode/launch.json` llamada "Streamlit: Run (module)" que inicia Streamlit en el terminal integrado para depuración en VS Code.
