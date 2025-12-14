@@ -10,7 +10,6 @@ from typing import Dict, List
 
 import pandas as pd
 import streamlit as st
-from openpyxl import Workbook, load_workbook
 
 EXCEL_PATH = Path("Validados_V3.xlsx")
 SHEET_NAME = "1 dic - 8 dic"
@@ -45,18 +44,9 @@ REVIEW_FIELDS: List[str] = BASE_FIELDS + [
 
 
 def load_dataset() -> pd.DataFrame:
-    """Lee el Excel como DataFrame, devolviendo strings y validando columnas."""
-    if not EXCEL_PATH.exists():
-        raise FileNotFoundError("No se encuentra el archivo Validados_V3.xlsx en la raíz del proyecto.")
-
+    """Lee el Excel como DataFrame, devolviendo strings y sin nulos."""
     df = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME, dtype=str)
     df = df.fillna("")
-
-    missing_cols = [col for col in BASE_FIELDS if col not in df.columns]
-    if missing_cols:
-        raise ValueError(
-            "Faltan columnas esperadas en el Excel: " + ", ".join(missing_cols)
-        )
     return df
 
 
@@ -85,21 +75,10 @@ def append_review(record: Dict[str, str], review_status: str, reviewer_note: str
 
 
 def persist_excel(df: pd.DataFrame) -> None:
-    """Guarda el DataFrame en el Excel original preservando otras hojas."""
+    """Guarda el DataFrame en el Excel original usando un archivo temporal."""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        if EXCEL_PATH.exists():
-            workbook = load_workbook(EXCEL_PATH)
-        else:
-            workbook = Workbook()
-
-        if SHEET_NAME in workbook.sheetnames:
-            del workbook[SHEET_NAME]
-
-        with pd.ExcelWriter(tmp.name, engine="openpyxl") as writer:
-            writer.book = workbook
-            writer.sheets = {ws.title: ws for ws in workbook.worksheets}
-            df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-        Path(tmp.name).replace(EXCEL_PATH)
+        df.to_excel(tmp.name, sheet_name=SHEET_NAME, index=False)
+    Path(tmp.name).replace(EXCEL_PATH)
 
 
 def next_queue_record(df: pd.DataFrame) -> Dict[str, str]:
@@ -200,15 +179,12 @@ def review_form(record: Dict[str, str]):
 def main():
     st.set_page_config(page_title="Revisor de Mayordomo Mail", layout="wide")
 
+    if not EXCEL_PATH.exists():
+        st.error("No se encuentra el archivo Validados_V3.xlsx en la raíz del proyecto.")
+        return
+
     if "df" not in st.session_state:
-        try:
-            st.session_state.df = load_dataset()
-        except FileNotFoundError:
-            st.error("No se encuentra el archivo Validados_V3.xlsx en la raíz del proyecto.")
-            return
-        except ValueError as exc:
-            st.error(str(exc))
-            return
+        st.session_state.df = load_dataset()
     df = st.session_state.df
     layout_sidebar(df)
 

@@ -17,11 +17,11 @@ Interfaz en Streamlit para revisar las filas del fichero `Validados_V3.xlsx` (ho
    ```
 
 3. Usa la barra lateral para cargar un logo y editar el título. La aplicación muestra una fila aleatoria pendiente, con campos de solo lectura para **Subject**, **Question** y **MailToAgent** en formato ampliado. El contador lateral indica cuántas filas quedan en la cola actual.
-4. Completa el formulario de revisión y pulsa **Guardar**. La fila se añade a `revisiones.csv` junto al estado y notas de revisión, y se elimina del Excel original para que no vuelva a aparecer. Si la hoja no contiene las columnas esperadas, la aplicación avisará y no modificará el libro.
+4. Completa el formulario de revisión y pulsa **Guardar**. La fila se añade a `revisiones.csv` junto al estado y notas de revisión, y se elimina del Excel original para que no vuelva a aparecer.
 5. Si necesitas pasar al siguiente sin registrar nada, pulsa **Saltar sin guardar**.
 6. Se carga automáticamente el siguiente registro hasta vaciar la hoja.
 
 ## Salida
 
 - `revisiones.csv`: histórico de las revisiones con fecha UTC, estado final y comentarios.
-- `Validados_V3.xlsx`: se actualiza en cada guardado, eliminando la fila revisada de la hoja **1 dic - 8 dic** y preservando el resto de hojas del libro.
+- `Validados_V3.xlsx`: se actualiza en cada guardado, eliminando la fila revisada de la hoja **1 dic - 8 dic**.
