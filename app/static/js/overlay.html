@@ -5,9 +5,27 @@
 <script>
 (function() {
     const TARGET_TEXTS = ["Guardar revisión y pasar al siguiente", "Saltar sin guardar"];
+    const overlayElement = () => document.getElementById('mymail-overlay');
+
+    const resetOverlay = () => {
+        const overlay = overlayElement();
+        if (overlay) overlay.style.display = 'none';
+        document.body.classList.remove('mymail-locked');
+    };
+
+    resetOverlay();
+
     const showOverlay = () => {
-        const overlay = document.getElementById('mymail-overlay');
+        const overlay = overlayElement();
         if (overlay) overlay.style.display = 'flex';
+        document.body.classList.add('mymail-locked');
+    };
+
+    const disableButtons = () => {
+        document.querySelectorAll('button').forEach(btn => {
+            btn.disabled = true;
+            btn.setAttribute('aria-busy', 'true');
+        });
     };
 
     const bindButtons = () => {
@@ -18,7 +36,7 @@
             btn.dataset.mymailBound = '1';
             btn.addEventListener('click', () => {
                 showOverlay();
-                buttons.forEach(b => b.disabled = true);
+                disableButtons();
             });
         });
     };
