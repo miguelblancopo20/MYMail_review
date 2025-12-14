@@ -21,8 +21,19 @@ def inject_styles() -> None:
     st.markdown(
         """
         <style>
-        /* Fondo de la app y color base */
-        .stApp { background-color: #f6f7f9 !important; color: #0b1724 !important; font-family: Arial, sans-serif; font-size:14px; }
+        /* Fuente y fondo global */
+        :root { --mymail-font: 'Inter', 'Segoe UI', Arial, sans-serif; }
+        html, body, [class^="css"], .stApp {
+            font-family: var(--mymail-font) !important;
+            background-color: #f6f7f9 !important;
+            color: #0b1724 !important;
+            font-size: 14px;
+        }
+
+        /* Ajuste de la columna principal para dejar espacio al header sticky */
+        .stApp > .main .block-container {
+            padding-top: 90px;
+        }
 
         /* Entradas, textareas y selects */
         input[type='text'], textarea, select {
@@ -31,7 +42,7 @@ def inject_styles() -> None:
             border: 1px solid #d1d5db !important;
             border-radius: 6px !important;
             padding: 6px 8px !important;
-            font-family: Arial, sans-serif !important;
+            font-family: var(--mymail-font) !important;
             font-size: 14px !important;
         }
 
@@ -42,20 +53,29 @@ def inject_styles() -> None:
             border: none !important;
             border-radius: 6px !important;
             padding: 8px 12px !important;
+            font-family: var(--mymail-font) !important;
         }
 
         /* Métricas y textos */
-        .stMetric, .stMetric > div { color: #0b1724 !important; }
-        h1, h2, h3, .stCaption { color: #0b1724 !important; font-family: Arial, sans-serif; }
-        label { font-family: Arial, sans-serif; font-size:14px; color:#0b1724; }
+        .stMetric, .stMetric > div { color: #0b1724 !important; font-family: var(--mymail-font) !important; }
+        h1, h2, h3, .stCaption, label { color: #0b1724 !important; font-family: var(--mymail-font) !important; }
+        label { font-size:14px; }
+
         /* Cabecera: logo y título */
-        .mymail-header { display:flex; align-items:center; gap:12px; }
+        .mymail-header {
+            display:flex;
+            align-items:center;
+            gap:12px;
+            position: sticky;
+            top: 0;
+            background-color: #f6f7f9;
+            z-index: 9999;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+        }
         .mymail-header .logo { height:56px; width:auto; }
         .mymail-header .title { margin:0; padding:0; font-size:28px; font-weight:700; color:#0b1724; }
-        /* Sticky/fixed header: mantiene logo, título y campos visibles al hacer scroll */
-        .mymail-header.sticky { position: fixed; top: 0; left: 0; right: 0; background-color: #f6f7f9; z-index: 9999; padding: 8px 12px; border-bottom: 1px solid rgba(0,0,0,0.06); display:flex; align-items:center; }
-        .mymail-header-placeholder { height:72px; }
-        .mymail-header .top-fields { margin-left: 24px; display:flex; gap:12px; align-items:center; }
+        .mymail-header .top-fields { margin-left: 24px; display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
         .mymail-header .top-fields .field { font-size:14px; color:#0b1724; background:#fff; padding:6px 8px; border-radius:6px; border:1px solid #e2e8f0; }
         </style>
         """,
@@ -166,12 +186,14 @@ def persist_excel(df: pd.DataFrame) -> None:
 
 def next_queue_record(df: pd.DataFrame) -> Dict[str, str]:
     """Devuelve el siguiente registro (dict) y persiste el índice en sesión."""
-    if "queue" not in st.session_state:
+    if "queue" not in st.session_state or not st.session_state.queue:
         st.session_state.queue = list(df.index)
         random.shuffle(st.session_state.queue)
     if not st.session_state.queue:
         return {}
     idx = st.session_state.queue.pop()
+    if idx not in df.index:
+        return next_queue_record(df)
     st.session_state.current_idx = idx
     return df.loc[idx].to_dict()
 
@@ -285,15 +307,6 @@ def main():
 
     inject_styles()
 
-    # Si se solicitó desplazarse arriba en la ejecución anterior, ejecutar JS y limpiar flag
-    if st.session_state.get("scroll_top"):
-        try:
-            # Use a short timeout to ensure DOM is ready, then scroll to top smoothly
-            components.html("<script>setTimeout(function(){window.scrollTo({top:0,behavior:'smooth'});},200);</script>", height=0)
-        except Exception:
-            pass
-        st.session_state["scroll_top"] = False
-
     if not EXCEL_PATH.exists():
         st.error("No se encuentra el archivo Validados_V3.xlsx en la raíz del proyecto.")
         return
@@ -324,7 +337,7 @@ def main():
         b64 = None
 
     header_html = f"""
-    <div class='mymail-header sticky'>
+    <div class='mymail-header'>
         {f"<img class='logo' src='data:image/png;base64,{b64}' />" if b64 else ''}
         <div class='title'>Revisor de Mayordomo Mail</div>
         <div class='top-fields'>
@@ -333,7 +346,6 @@ def main():
             <div class='field'><strong>Automatismo:</strong> {auto_val}</div>
         </div>
     </div>
-    <div class='mymail-header-placeholder'></div>
     """
     st.markdown(header_html, unsafe_allow_html=True)
     st.caption("Revisa el feedback del agente para analizar mejoras sobre la solución")
@@ -354,7 +366,6 @@ def main():
             persist_excel(st.session_state.df)
         st.session_state.current = next_queue_record(st.session_state.df)
         st.success("Fila descartada y registrada en descartes.csv")
-        st.session_state["scroll_top"] = True
         return
 
     if submitted:
@@ -365,7 +376,6 @@ def main():
             persist_excel(st.session_state.df)
         st.session_state.current = next_queue_record(st.session_state.df)
         st.success("Revisión guardada y fila eliminada del Excel.")
-        st.session_state["scroll_top"] = True
         return
 
 
