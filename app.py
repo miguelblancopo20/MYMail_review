@@ -32,7 +32,7 @@ def inject_styles() -> None:
 
         /* Ajuste de la columna principal para dejar espacio al header sticky */
         .stApp > .main .block-container {
-            padding-top: 120px;
+            padding-top: 90px;
         }
 
         /* Entradas, textareas y selects */
@@ -66,10 +66,8 @@ def inject_styles() -> None:
             display:flex;
             align-items:center;
             gap:12px;
-            position: fixed;
+            position: sticky;
             top: 0;
-            left: 0;
-            right: 0;
             background-color: #f6f7f9;
             z-index: 9999;
             padding: 12px 16px;
@@ -372,7 +370,6 @@ def main():
     st.set_page_config(page_title="Revisor de Mayordomo Mail", layout="wide")
 
     inject_styles()
-    inject_overlay()
 
     if not EXCEL_PATH.exists():
         st.error("No se encuentra el archivo Validados_V3.xlsx en la raíz del proyecto.")
