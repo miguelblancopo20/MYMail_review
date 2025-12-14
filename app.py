@@ -426,8 +426,12 @@ def main():
         append_skip(st.session_state.current)
         idx = st.session_state.get("current_idx")
         if idx is not None:
-            st.session_state.df = st.session_state.df.drop(index=idx)
-            persist_excel(st.session_state.df)
+            if idx in st.session_state.df.index:
+                st.session_state.df = st.session_state.df.drop(index=idx)
+                persist_excel(st.session_state.df)
+            else:
+                # índice ya no existe en el DataFrame (posible duplicado); ignorar
+                pass
         st.session_state.current = next_queue_record(st.session_state.df)
         st.success("Fila descartada y registrada en descartes.csv")
         return
@@ -436,8 +440,12 @@ def main():
         append_review(st.session_state.current, status, reviewer_note, internal_note)
         idx = st.session_state.get("current_idx")
         if idx is not None:
-            st.session_state.df = st.session_state.df.drop(index=idx)
-            persist_excel(st.session_state.df)
+            if idx in st.session_state.df.index:
+                st.session_state.df = st.session_state.df.drop(index=idx)
+                persist_excel(st.session_state.df)
+            else:
+                # índice ya no existe en el DataFrame (posible duplicado); ignorar
+                pass
         st.session_state.current = next_queue_record(st.session_state.df)
         st.success("Revisión guardada y fila eliminada del Excel.")
         return
