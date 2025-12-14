@@ -77,7 +77,71 @@ def inject_styles() -> None:
         .mymail-header .title { margin:0; padding:0; font-size:28px; font-weight:700; color:#0b1724; }
         .mymail-header .top-fields { margin-left: 24px; display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
         .mymail-header .top-fields .field { font-size:14px; color:#0b1724; background:#fff; padding:6px 8px; border-radius:6px; border:1px solid #e2e8f0; }
+
+        /* Overlay de carga infinito */
+        .mymail-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.72);
+            z-index: 12000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .mymail-spinner {
+            width: 54px;
+            height: 54px;
+            border: 6px solid #dbeafe;
+            border-top-color: #0b5fff;
+            border-radius: 50%;
+            animation: mymail-spin 1s linear infinite;
+        }
+        @keyframes mymail-spin { to { transform: rotate(360deg); } }
+        .mymail-overlay-text { font-size: 16px; font-weight: 600; color: #0b1724; }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def inject_overlay() -> None:
+    """Inserta overlay de carga y JS para bloquear acciones durante envíos."""
+    st.markdown(
+        """
+        <div id="mymail-overlay" class="mymail-overlay">
+            <div class="mymail-spinner"></div>
+            <div class="mymail-overlay-text">Procesando...</div>
+        </div>
+        <script>
+        (function() {
+            const TARGET_TEXTS = ["Guardar revisión y pasar al siguiente", "Saltar sin guardar"];
+            const showOverlay = () => {
+                const overlay = document.getElementById('mymail-overlay');
+                if (overlay) {
+                    overlay.style.display = 'flex';
+                }
+            };
+
+            const bindButtons = () => {
+                const buttons = Array.from(document.querySelectorAll('button'))
+                    .filter(btn => TARGET_TEXTS.includes(btn.innerText.trim()));
+                buttons.forEach(btn => {
+                    if (btn.dataset.mymailBound === '1') return;
+                    btn.dataset.mymailBound = '1';
+                    btn.addEventListener('click', () => {
+                        showOverlay();
+                        buttons.forEach(b => b.disabled = true);
+                    });
+                });
+            };
+
+            const observer = new MutationObserver(bindButtons);
+            observer.observe(document.body, { childList: true, subtree: true });
+            bindButtons();
+        })();
+        </script>
         """,
         unsafe_allow_html=True,
     )
