@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8501
+    PORT=8000
 
 WORKDIR /app
 
@@ -14,6 +14,4 @@ COPY . .
 
 EXPOSE ${PORT}
 
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
-
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+ENTRYPOINT ["python", "flask_app.py"]

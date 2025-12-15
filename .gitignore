@@ -3,3 +3,5 @@ descartes.csv
 revisiones.csv
 *.venv
 Validados_V3.xlsx
+config.py
+__pycache__*

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+  <main class="page page-center">
+    <div class="card" style="max-width:640px">
+      <div class="card-title">Revisor de Mayordomo Mail</div>
+      <p style="margin:0;color:#374151">{{ message }}</p>
+      <div style="margin-top:14px">
+        <a class="btn btn-ghost" href="{{ url_for('logout') }}">Volver</a>
+      </div>
+    </div>
+  </main>
+{% endblock %}
+

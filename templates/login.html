@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block body %}
+  <main class="page page-center">
+    <div class="login-wrap">
+      <header class="login-header">
+        <img class="login-logo" alt="EY logo" src="{{ url_for('assets', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+        <h1 class="login-title">Revisor de Mayordomo Mail</h1>
+      </header>
+
+      <div class="card">
+        <div class="card-title">Inicio de sesión</div>
+        <form method="post" class="stack" data-overlay data-overlay-message="Validando credenciales...">
+          <label class="field">
+            <span>Usuario</span>
+            <input name="username" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span>Contraseña</span>
+            <input name="password" type="password" autocomplete="current-password" />
+          </label>
+          <button class="btn btn-primary" type="submit">Acceder</button>
+          {% if error %}
+            <div class="alert">{{ error }}</div>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </main>
+{% endblock %}
+

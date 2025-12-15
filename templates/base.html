@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or "Revisor de Mayordomo Mail" }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='mymail.css') }}" />
+    <script defer src="{{ url_for('static', filename='mymail.js') }}"></script>
+  </head>
+  <body>
+    <div id="mymail-overlay" class="mymail-overlay" aria-hidden="true">
+      <div class="mymail-spinner" aria-hidden="true"></div>
+      <div class="mymail-overlay-text" id="mymail-overlay-text">Procesando...</div>
+    </div>
+
+    {% block body %}{% endblock %}
+  </body>
+</html>

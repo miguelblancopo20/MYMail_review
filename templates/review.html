@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="topbar">
+    <div class="topbar-left">
+      <img class="topbar-logo" alt="EY logo" src="{{ url_for('assets', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+      <div class="topbar-title">Revisor de Mayordomo Mail</div>
+    </div>
+    <div class="topbar-fields">
+      <div class="topbar-field"><span>Fecha</span><strong>{{ record.get("@timestamp","") }}</strong></div>
+      <div class="topbar-field"><span>ID Correo</span><strong>{{ record.get("IdCorreo","") }}</strong></div>
+      <div class="topbar-field"><span>Automatismo</span><strong>{{ record.get("Automatismo","") }}</strong></div>
+    </div>
+    <div class="topbar-right">
+      <div class="pill">Pendientes: {{ pending }}</div>
+      <div class="pill">{{ current_user }}</div>
+      <a class="btn btn-ghost" href="{{ url_for('stats') }}">Stats</a>
+      <a class="btn btn-ghost" href="{{ url_for('logout') }}">Salir</a>
+    </div>
+  </header>
+
+  <main class="page page--full">
+    <div class="layout">
+      <div class="layout-left">
+        <section class="section section--mail">
+          <div class="section-title">Datos del correo</div>
+
+          <div class="row-2">
+            <div class="field readonly">
+              <div class="field-head">
+                <div class="field-label">From</div>
+              </div>
+              <input value="{{ mail_meta.get('From') or '' }}" readonly />
+            </div>
+
+            <div class="field readonly">
+              <div class="field-head">
+                <div class="field-label">Asunto</div>
+              </div>
+              <input id="subject" value="{{ record.get('Subject','') }}" readonly />
+            </div>
+          </div>
+
+          <div class="field readonly">
+            <div class="field-head">
+              <div class="field-label">Correo completo</div>
+            </div>
+            <textarea id="question" class="textarea-mail" readonly>{{ record.get("Question","") }}</textarea>
+          </div>
+        </section>
+
+        <section class="section section--act">
+          <div class="section-title">Actuación MY</div>
+
+          <div class="meta-row" title="Automatismo · Ficha · Categorización · Acción">
+            <div class="meta-item"><span>Automatismo</span><strong>{{ record.get("Automatismo","") or "—" }}</strong></div>
+            <div class="meta-item"><span>Ficha</span><strong>{{ mail_meta.get("Ficha") or "—" }}</strong></div>
+            <div class="meta-item"><span>Categorización</span><strong>{{ mail_meta.get("Categorización") or "—" }}</strong></div>
+            <div class="meta-item"><span>Acción</span><strong>{{ mail_meta.get("Acción") or "—" }}</strong></div>
+          </div>
+
+          {% if act_summary %}
+            <div class="field readonly">
+              <div class="field-head"><div class="field-label">Resumen</div></div>
+              <textarea class="textarea-half" readonly>{{ act_summary }}</textarea>
+            </div>
+          {% endif %}
+
+          {% if act_proposal %}
+            <div class="field readonly">
+              <div class="field-head"><div class="field-label">Propuesta de actuación</div></div>
+              <textarea class="textarea-half" readonly>{{ act_proposal }}</textarea>
+            </div>
+          {% endif %}
+
+          {% if act_params %}
+            <div class="field readonly">
+              <div class="field-head"><div class="field-label">Parámetros</div></div>
+              <textarea class="textarea-params" readonly>{{ act_params }}</textarea>
+            </div>
+          {% endif %}
+
+          {% if act_items %}
+            <div class="ia-grid">
+              {% for key, value in act_items %}
+                <div class="field readonly ia-item">
+                  <div class="field-head">
+                    <div class="field-label">{{ key }}</div>
+                  </div>
+                  <textarea class="textarea-ia" readonly>{{ value }}</textarea>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </section>
+      </div>
+
+      <div class="layout-rightcol">
+        <section class="section section--agent">
+          <div class="section-title">Feedback Agente</div>
+          <div class="stack">
+            <div class="kv kv-vert"><div class="k">Validado por agente</div><div class="v">{{ record.get("Validado","") }}</div></div>
+            <div class="kv kv-vert"><div class="k">Motivo</div><div class="v">{{ record.get("Motivo","") }}</div></div>
+            <div class="kv kv-vert"><div class="k">Comentario</div><div class="v">{{ record.get("Comentario","") }}</div></div>
+          </div>
+        </section>
+
+        <section class="section section--review rightcol-review">
+          <div class="section-title">Revisión EY</div>
+          {% if error %}
+            <div class="alert">{{ error }}</div>
+          {% endif %}
+
+          <form method="post" action="{{ url_for('action') }}" class="stack" data-overlay id="reviewForm">
+            <div class="field">
+              <span>Estado final</span>
+              <select name="status" id="statusSelect">
+                {% for opt in ["Pendiente","OK","KO MYM","KO AGENTE","DUDA"] %}
+                  <option value="{{ opt }}" {% if opt == "Pendiente" %}selected{% endif %}>{{ opt }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <span>Comentario de revisión</span>
+              <input id="reviewerNote" name="reviewer_note" placeholder="Describe por qué la etiqueta es correcta o qué ajuste necesita." />
+            </div>
+            <div class="field">
+              <span>Nota interna (opcional)</span>
+              <input name="internal_note" placeholder="Observaciones operativas o pasos siguientes." />
+            </div>
+            <div class="actions actions-bottom actions-center">
+              <button class="btn btn-primary" type="submit" name="action" value="save" id="btnSave" disabled data-overlay-message="Guardando revisión...">Guardar</button>
+              <button class="btn btn-secondary" type="submit" name="action" value="skip" id="btnSkip" data-overlay-message="Guardando descarte...">Saltar</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+  </main>
+{% endblock %}
