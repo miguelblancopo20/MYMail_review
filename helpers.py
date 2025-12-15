@@ -263,19 +263,23 @@ def review_form(record: Dict[str, str]):
         status = st.selectbox(
             "Estado final",
             ["OK", "KO MYM", "KO AGENTE", "DUDA"],
+            key="form_status",
         )
         reviewer_note = st.text_input(
             "Comentario de revisión",
             placeholder="Describe por qué la etiqueta es correcta o qué ajuste necesita.",
+            key="form_reviewer_note",
         )
         internal_note = st.text_input(
             "Nota interna (opcional)",
             placeholder="Observaciones operativas o pasos siguientes.",
+            key="form_internal_note",
         )
-        col1, col2 = st.columns([3, 1])
+        col1, col2, col3 = st.columns([2, 1.2, 1])
         submitted = col1.form_submit_button("Guardar revisión y pasar al siguiente")
-        skip = col2.form_submit_button("Saltar sin guardar", type="secondary")
-    return submitted, skip, status, reviewer_note, internal_note
+        go_next = col2.form_submit_button("Pasar al siguiente")
+        skip = col3.form_submit_button("Saltar sin guardar", type="secondary")
+    return submitted, skip, go_next, status, reviewer_note, internal_note
 
 
 def inject_styles() -> None:
