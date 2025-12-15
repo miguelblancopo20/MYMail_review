@@ -23,18 +23,25 @@ from helpers import (
     review_form,
 )
 
+
+def load_logo_base64() -> str | None:
+    """Carga el logo de EY en base64 si existe."""
+    logo_path = Path("app/static/img/ey.png")
+    try:
+        if logo_path.exists():
+            return base64.b64encode(logo_path.read_bytes()).decode()
+    except Exception:
+        return None
+    return None
+
  
 def render_header(current: Dict[str, str] | None) -> None:
     """Renderiza el banner superior con el logo y los campos principales."""
-    logo_path = Path("app/static/img/ey.png")
     fecha_val = html_escape.escape(format_timestamp(current.get("@timestamp", ""))) if current else ""
     id_val = html_escape.escape(current.get("IdCorreo", "")) if current else ""
     auto_val = html_escape.escape(current.get("Automatismo", "")) if current else ""
 
-    try:
-        b64 = base64.b64encode(logo_path.read_bytes()).decode() if logo_path.exists() else None
-    except Exception:
-        b64 = None
+    b64 = load_logo_base64()
 
     header_html = f"""
     <div class='mymail-header'>
@@ -48,8 +55,38 @@ def render_header(current: Dict[str, str] | None) -> None:
     </div>
     """
     st.markdown(header_html, unsafe_allow_html=True)
+    st.markdown("<script>document.body.classList.add('with-mymail-header');</script>", unsafe_allow_html=True)
     st.caption("Revisa el feedback del agente para analizar mejoras sobre la solución")
     inject_overlay()
+
+
+def render_login() -> None:
+    """Pantalla de autenticación simple para acceder a la app."""
+    b64 = load_logo_base64()
+    st.title("Revisor de Mayordomo Mail")
+    if b64:
+        st.markdown(
+            f"""
+            <div style='display:flex;justify-content:center;margin:24px 0;'>
+                <img src='data:image/png;base64,{b64}' alt='EY logo' style='height:120px;'>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.subheader("Inicio de sesión")
+    with st.form("login_form"):
+        username = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+        submitted = st.form_submit_button("Acceder")
+
+    if submitted:
+        if username == "admin" and password == "admin":
+            st.session_state.authenticated = True
+            st.success("Acceso concedido. Cargando la aplicación…")
+            st.experimental_rerun()
+        else:
+            st.error("Usuario o contraseña incorrectos. Inténtalo de nuevo.")
 
 
 def handle_skip(df):
@@ -84,6 +121,10 @@ def main():
     st.set_page_config(page_title="Revisor de Mayordomo Mail", layout="wide")
     inject_styles()
 
+    if not st.session_state.get("authenticated"):
+        render_login()
+        return
+
     if not EXCEL_PATH.exists():
         st.error("No se encuentra el archivo Validados_V3.xlsx en la raíz del proyecto.")
         return
@@ -108,6 +149,10 @@ def main():
     if submitted:
         handle_submit(df, status, reviewer_note, internal_note)
         return
+
+    if st.session_state.get("scroll_top"):
+        st.markdown("<script>window.scrollTo({top:0, behavior:'smooth'});</script>", unsafe_allow_html=True)
+        st.session_state["scroll_top"] = False
 
 
 if __name__ == "__main__":
