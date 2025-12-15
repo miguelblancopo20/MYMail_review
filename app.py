@@ -23,7 +23,7 @@ from helpers import (
     review_form,
 )
 
-
+ 
 def render_header(current: Dict[str, str] | None) -> None:
     """Renderiza el banner superior con el logo y los campos principales."""
     logo_path = Path("app/static/img/ey.png")
