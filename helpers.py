@@ -281,11 +281,13 @@ def review_form(record: Dict[str, str]):
 def inject_styles() -> None:
     css = """
 <style>
-.mymail-header{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 0;background:var(--background-color,#fff);box-shadow:0 2px 8px rgba(0,0,0,0.08)}
-.mymail-header .logo{height:36px;margin-right:8px}
-.mymail-header .title{font-size:20px;font-weight:700;margin-right:12px}
+body{margin:0;}
+.with-mymail-header .block-container{padding-top:140px !important;}
+.mymail-header{position:fixed;top:0;left:0;right:0;z-index:120;display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px 24px;background:var(--background-color,#fff);box-shadow:0 2px 8px rgba(0,0,0,0.12)}
+.mymail-header .logo{height:40px;margin-right:8px}
+.mymail-header .title{font-size:22px;font-weight:700;margin-right:12px}
 .mymail-header .top-fields{margin-left:8px;display:flex;flex-wrap:wrap;gap:12px}
-.mymail-header .field{font-size:13px;padding:2px 8px;border-radius:6px;background:#f5f7fb}
+.mymail-header .field{font-size:13px;padding:4px 10px;border-radius:6px;background:#f5f7fb}
 .mymail-field .field{font-size:13px;padding:2px 8px;border-radius:6px;background:#f5f7fb}
 .mymail-overlay{display:none;position:fixed;inset:0;align-items:center;justify-content:center;z-index:9999;background:rgba(0,0,0,0.45);flex-direction:column}
 .mymail-spinner{width:48px;height:48px;border-radius:50%;border:6px solid rgba(255,255,255,0.2);border-top-color:white;animation:mymail-spin 1s linear infinite;margin-bottom:8px}
