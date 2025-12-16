@@ -53,3 +53,25 @@ python scripts/load_entrada.py --excel Validados_V3.xlsx --sheet "1 dic - 8 dic"
 docker build -t mymail-review:latest .
 docker run -p 8000:8000 mymail-review:latest
 ```
+
+## Docker (dev con hot-reload)
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+## Azure (ACR + App Service)
+
+- Build y push:
+
+```bash
+az acr login --name <ACR_NAME>
+docker build -t <ACR_NAME>.azurecr.io/mymail-review:latest .
+docker push <ACR_NAME>.azurecr.io/mymail-review:latest
+```
+
+- App Service (contenedor): configura el puerto de la app en `8000` y define estas settings:
+  - `PORT=8000`
+  - `AZURE_STORAGE_CONNECTION_STRING=...`
+  - `FLASK_SECRET_KEY=...`
+  - (opcional) `APP_VERSION=...`

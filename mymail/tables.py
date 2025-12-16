@@ -127,6 +127,7 @@ def write_resultado(
     status: str,
     reviewer_note: str,
     internal_note: str,
+    ko_mym_reason: str = "",
 ) -> None:
     now = _utcnow()
     client = _table(config.TABLE_RESULTADOS)
@@ -140,6 +141,7 @@ def write_resultado(
         "record_id": record.get("IdCorreo", "") or "",
         "automatismo": record.get("Automatismo", "") or "",
         "status": status,
+        "ko_mym_reason": ko_mym_reason or "",
         "reviewer_note": reviewer_note or "",
         "internal_note": internal_note or "",
         "record_json": json.dumps(record, ensure_ascii=False),

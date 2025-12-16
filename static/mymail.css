@@ -51,6 +51,18 @@ body{
 .topbar-left{display:flex;align-items:center;gap:10px;min-width:260px}
 .topbar-logo{height:34px}
 .topbar-title{color:var(--text);font-weight:900;letter-spacing:-0.2px}
+.version-badge{
+  display:inline-flex;
+  margin-left:8px;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid rgba(17,24,39,0.12);
+  background:#f3f4f6;
+  font-size:12px;
+  font-weight:900;
+  color:var(--text);
+  vertical-align:middle;
+}
 .topbar-fields{display:flex;gap:18px;flex-wrap:wrap;align-items:center;flex:1}
 .topbar-field{display:flex;flex-direction:column;gap:2px}
 .topbar-field span{font-size:11px;color:var(--muted)}
@@ -128,6 +140,8 @@ body{
 .btn-ghost:hover{background:#f3f4f6}
 .btn:disabled{opacity:0.55;cursor:not-allowed}
 .btn:disabled:hover{background:inherit}
+.hidden{display:none !important}
+.req-marker{color:#b91c1c;font-weight:900}
 
 .stats-grid{
   display:grid;
@@ -177,6 +191,7 @@ body{
   height: calc(100vh - 64px);
   align-items:stretch;
 }
+.layout-left, .layout-rightcol{align-self:start;}
 .layout-left{
   margin-top:0;
   overflow:auto;

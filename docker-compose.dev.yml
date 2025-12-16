@@ -1,0 +1,13 @@
+services:
+  web:
+    image: docker.io/library/mymail-review:dev
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      FLASK_HOST: "0.0.0.0"
+      FLASK_DEBUG: "1"
+    volumes:
+      - .:/app
+    entrypoint: ["python", "flask_app.py"]

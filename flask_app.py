@@ -5,9 +5,8 @@ import os
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, redirect, render_template, request, session, url_for
 
 import config
 from mymail.state import get_state, reset_state
@@ -17,6 +16,7 @@ from mymail.tables import _list_by_days
 
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
+    app_version = (getattr(config, "APP_VERSION", "") or "").strip() or "0.0.0"
     app.secret_key = (
         (getattr(config, "FLASK_SECRET_KEY", "") or "").strip()
         or (os.environ.get("FLASK_SECRET_KEY", "") or "").strip()
@@ -28,6 +28,21 @@ def create_app() -> Flask:
             return ""
         value = value.replace("\r\n", "\n").replace("\r", "\n")
         return re.sub(r"\n{2,}", "\n", value)
+
+    def format_ts(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            v = value.strip()
+            if v.endswith("Z"):
+                v = v[:-1] + "+00:00"
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(timezone.utc)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return value
 
     def norm_key(value: str) -> str:
         value = "".join(
@@ -57,16 +72,6 @@ def create_app() -> Flask:
             return [("root", json.dumps(obj, ensure_ascii=False, indent=2))]
         return [("value", str(obj))]
 
-    @app.get("/assets/<path:filename>")
-    def assets(filename: str):
-        base = Path("app/static").resolve()
-        target = (base / filename).resolve()
-        if base not in target.parents and target != base:
-            return ("Not found", 404)
-        if not target.exists() or not target.is_file():
-            return ("Not found", 404)
-        return send_from_directory(base, filename)
-
     @app.get("/")
     def index():
         if not session.get("authenticated"):
@@ -77,7 +82,7 @@ def create_app() -> Flask:
     def login():
         if session.get("authenticated"):
             return redirect(url_for("review"))
-        return render_template("login.html", error=None, title="Revisor de Mayordomo Mail")
+        return render_template("login.html", error=None, title="Revisor de Mayordomo Mail", app_version=app_version)
 
     @app.post("/login")
     def login_post():
@@ -97,6 +102,7 @@ def create_app() -> Flask:
             "login.html",
             error="Usuario o contraseña incorrectos. Inténtalo de nuevo.",
             title="Revisor de Mayordomo Mail",
+            app_version=app_version,
         )
 
     @app.get("/logout")
@@ -121,6 +127,7 @@ def create_app() -> Flask:
             return render_template("done.html", message="No quedan registros pendientes.")
 
         record = dict(record)
+        record["@timestamp"] = format_ts(str(record.get("@timestamp", "") or ""))
         record["Question"] = normalize_multiline(record.get("Question", ""))
 
         mail_items = parse_mailtoagent(record.get("MailToAgent", ""))
@@ -190,6 +197,7 @@ def create_app() -> Flask:
             act_items=act_items,
             pending=state.pending_count(),
             current_user=session.get("user", ""),
+            app_version=app_version,
             title="Revisor de Mayordomo Mail",
             error=request.args.get("error"),
         )
@@ -245,6 +253,7 @@ def create_app() -> Flask:
             "stats.html",
             title="Stats",
             current_user=session.get("user", ""),
+            app_version=app_version,
             error=None,
             days=days,
             total_resultados=total_resultados,
@@ -269,6 +278,14 @@ def create_app() -> Flask:
         status = request.form.get("status") or "Pendiente"
         reviewer_note = request.form.get("reviewer_note") or ""
         internal_note = request.form.get("internal_note") or ""
+        ko_mym_reason = request.form.get("ko_mym_reason") or ""
+        elapsed_seconds_raw = request.form.get("elapsed_seconds") or ""
+        elapsed_seconds = None
+        try:
+            if elapsed_seconds_raw.strip():
+                elapsed_seconds = int(float(elapsed_seconds_raw))
+        except Exception:
+            elapsed_seconds = None
 
         if status == "Pendiente" and action_type != "skip":
             log_click(action=action_type or "action", username=username, result="blocked:pendiente")
@@ -277,13 +294,22 @@ def create_app() -> Flask:
         record_id = state.current_record().get("IdCorreo", "")
 
         if action_type == "save":
+            if status == "KO MYM" and not ko_mym_reason.strip():
+                log_click(
+                    action="save",
+                    username=username,
+                    record_id=record_id,
+                    result="blocked:missing_ko_mym_reason",
+                    extra={"status": status, "elapsed_seconds": elapsed_seconds},
+                )
+                return redirect(url_for("review", error="Para KO MYM selecciona el detalle del KO."))
             if (status.startswith("KO") or status == "DUDA") and not reviewer_note.strip():
                 log_click(
                     action="save",
                     username=username,
                     record_id=record_id,
                     result="blocked:missing_comment",
-                    extra={"status": status},
+                    extra={"status": status, "elapsed_seconds": elapsed_seconds},
                 )
                 return redirect(
                     url_for(
@@ -297,13 +323,26 @@ def create_app() -> Flask:
                 status=status,
                 reviewer_note=reviewer_note,
                 internal_note=internal_note,
+                ko_mym_reason=ko_mym_reason,
             )
-            log_click(action="save", username=username, record_id=record_id, result="ok", extra={"status": status})
+            log_click(
+                action="save",
+                username=username,
+                record_id=record_id,
+                result="ok",
+                extra={"status": status, "elapsed_seconds": elapsed_seconds, "ko_mym_reason": ko_mym_reason},
+            )
             return redirect(url_for("review"))
 
         if action_type == "skip":
             state.skip_current(username=username)
-            log_click(action="skip", username=username, record_id=record_id, result="ok", extra={"status": status})
+            log_click(
+                action="skip",
+                username=username,
+                record_id=record_id,
+                result="ok",
+                extra={"status": status, "elapsed_seconds": elapsed_seconds},
+            )
             return redirect(url_for("review"))
 
         log_click(action="action", username=username, record_id=record_id, result="fail:unknown_action")
@@ -315,4 +354,7 @@ def create_app() -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "8000")), debug=True)
+    host = (os.environ.get("FLASK_HOST", "") or "").strip() or "0.0.0.0"
+    port = int(os.environ.get("PORT", "8000"))
+    debug = (os.environ.get("FLASK_DEBUG", "") or "1").strip() not in {"0", "false", "False"}
+    app.run(host=host, port=port, debug=debug)

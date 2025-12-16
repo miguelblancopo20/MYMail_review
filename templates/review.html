@@ -2,13 +2,12 @@
 {% block body %}
   <header class="topbar">
     <div class="topbar-left">
-      <img class="topbar-logo" alt="EY logo" src="{{ url_for('assets', filename='img/ey.png') }}" onerror="this.style.display='none'" />
-      <div class="topbar-title">Revisor de Mayordomo Mail</div>
+      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
     </div>
     <div class="topbar-fields">
       <div class="topbar-field"><span>Fecha</span><strong>{{ record.get("@timestamp","") }}</strong></div>
       <div class="topbar-field"><span>ID Correo</span><strong>{{ record.get("IdCorreo","") }}</strong></div>
-      <div class="topbar-field"><span>Automatismo</span><strong>{{ record.get("Automatismo","") }}</strong></div>
     </div>
     <div class="topbar-right">
       <div class="pill">Pendientes: {{ pending }}</div>
@@ -27,16 +26,16 @@
           <div class="row-2">
             <div class="field readonly">
               <div class="field-head">
-                <div class="field-label">From</div>
+                <div class="field-label">Asunto</div>
               </div>
-              <input value="{{ mail_meta.get('From') or '' }}" readonly />
+              <input id="subject" value="{{ record.get('Subject','') }}" readonly />
             </div>
 
             <div class="field readonly">
               <div class="field-head">
-                <div class="field-label">Asunto</div>
+                <div class="field-label">From</div>
               </div>
-              <input id="subject" value="{{ record.get('Subject','') }}" readonly />
+              <input value="{{ mail_meta.get('From') or '' }}" readonly />
             </div>
           </div>
 
@@ -112,21 +111,31 @@
 
           <form method="post" action="{{ url_for('action') }}" class="stack" data-overlay id="reviewForm">
             <div class="field">
-              <span>Estado final</span>
+              <span>Estado revisión <span class="req-marker">*</span></span>
               <select name="status" id="statusSelect">
                 {% for opt in ["Pendiente","OK","KO MYM","KO AGENTE","DUDA"] %}
                   <option value="{{ opt }}" {% if opt == "Pendiente" %}selected{% endif %}>{{ opt }}</option>
                 {% endfor %}
               </select>
             </div>
+            <div class="field hidden" id="koMymReasonWrap">
+              <span>Detalle KO MYM <span class="req-marker" id="reqKoMym">*</span></span>
+              <select name="ko_mym_reason" id="koMymReason">
+                <option value="" selected>Pendiente</option>
+                {% for opt in ["KO TEMATICA","KO SUBTEMATICA","KO PARAMETROS","KO TEMÁTICA Y PARAMETROS","KO SUBTEMÁTICA Y PARAMETROS","OTRO"] %}
+                  <option value="{{ opt }}">{{ opt }}</option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="field">
-              <span>Comentario de revisión</span>
-              <input id="reviewerNote" name="reviewer_note" placeholder="Describe por qué la etiqueta es correcta o qué ajuste necesita." />
+              <span>Comentario de revisión <span class="req-marker hidden" id="reqNote">*</span></span>
+              <input id="reviewerNote" name="reviewer_note" placeholder="Describe el ajuste a realizar" />
             </div>
             <div class="field">
               <span>Nota interna (opcional)</span>
               <input name="internal_note" placeholder="Observaciones operativas o pasos siguientes." />
             </div>
+            <input type="hidden" name="elapsed_seconds" id="elapsedSeconds" value="" />
             <div class="actions actions-bottom actions-center">
               <button class="btn btn-primary" type="submit" name="action" value="save" id="btnSave" disabled data-overlay-message="Guardando revisión...">Guardar</button>
               <button class="btn btn-secondary" type="submit" name="action" value="skip" id="btnSkip" data-overlay-message="Guardando descarte...">Saltar</button>

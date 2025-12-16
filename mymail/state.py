@@ -106,7 +106,15 @@ class ReviewState:
         write_descarte(username=username, record=record)
         self._drop_current()
 
-    def submit_current(self, *, username: str, status: str, reviewer_note: str, internal_note: str) -> None:
+    def submit_current(
+        self,
+        *,
+        username: str,
+        status: str,
+        reviewer_note: str,
+        internal_note: str,
+        ko_mym_reason: str = "",
+    ) -> None:
         record = self.current_record()
         if not record:
             return
@@ -114,6 +122,7 @@ class ReviewState:
             username=username,
             record=record,
             status=status,
+            ko_mym_reason=ko_mym_reason,
             reviewer_note=reviewer_note,
             internal_note=internal_note,
         )

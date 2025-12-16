@@ -3,8 +3,8 @@
   <main class="page page-center">
     <div class="login-wrap">
       <header class="login-header">
-        <img class="login-logo" alt="EY logo" src="{{ url_for('assets', filename='img/ey.png') }}" onerror="this.style.display='none'" />
-        <h1 class="login-title">Revisor de Mayordomo Mail</h1>
+        <img class="login-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+        <h1 class="login-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></h1>
       </header>
 
       <div class="card">
@@ -27,4 +27,3 @@
     </div>
   </main>
 {% endblock %}
-
