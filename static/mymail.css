@@ -85,6 +85,7 @@ body{
 .section--review{border-left:6px solid var(--accent-review);background:linear-gradient(180deg, rgba(147,51,234,0.06), #fff 70%)}
 .section--act{border-left:6px solid var(--accent-act);background:linear-gradient(180deg, rgba(249,115,22,0.06), #fff 70%)}
 .grid-3{display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px}
+.grid-4{display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:10px}
 
 .kv{
   background:rgba(255,255,255,0.92);
@@ -168,6 +169,7 @@ body{
 .section--compact .kv{padding:8px}
 .section--compact .kv .k{margin-bottom:4px}
 .section--compact .kv .v{font-size:12px;font-weight:800}
+.section--compact .kv-row{display:none}
 
 @media (max-width: 900px){
   .menu-grid{grid-template-columns:1fr}
@@ -186,6 +188,8 @@ body{
 .kv-row{display:flex;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff}
 .kv-row .k{color:var(--muted);font-size:12px;font-weight:800;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kv-row .v{color:var(--text);font-size:12px;font-weight:900}
+.kv-row-3{display:grid;grid-template-columns:minmax(0, 1fr) auto auto;align-items:center}
+.kv-row-3 .v{text-align:right}
 
 .tbl{
   width:100%;

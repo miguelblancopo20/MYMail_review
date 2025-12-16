@@ -11,6 +11,10 @@
     </div>
     <div class="topbar-right">
       <div class="pill">{{ current_user }}</div>
+      <form method="get" class="actions" style="gap:6px">
+        <input name="days" value="{{ days }}" inputmode="numeric" style="width:72px; padding:8px 10px; border-radius:12px; border:1px solid var(--line); font-size:12px" />
+        <button class="btn btn-sm btn-ghost" type="submit">Días</button>
+      </form>
       <a class="btn btn-ghost" href="{{ url_for('stats_listado') }}">Listado</a>
       <a class="btn btn-ghost" href="{{ url_for('review') }}">Continuar revisando</a>
       <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
@@ -18,10 +22,6 @@
   </header>
 
   <main class="page page--full">
-    {% if error %}
-      <div class="alert">{{ error }}</div>
-    {% endif %}
-
     <div class="stats-grid">
       <div class="card stat">
         <div class="stat-k">Revisiones (últimos {{ days }} días)</div>
@@ -43,19 +43,19 @@
 
     <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto">
       <section class="section section--review">
-        <div class="section-title">Estados</div>
+        <div class="section-title">Estados (Top 10)</div>
         <div class="kv-list">
-          {% for k,v in by_status %}
-            <div class="kv-row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>
+          {% for k,v,p in by_status %}
+            <div class="kv-row kv-row-3"><div class="k">{{ k }}</div><div class="v">{{ v }}</div><div class="v">{{ p }}</div></div>
           {% endfor %}
         </div>
       </section>
 
       <section class="section section--act">
-        <div class="section-title">Top Automatismos (revisión)</div>
+        <div class="section-title">Top Automatismos (Top 10)</div>
         <div class="kv-list">
-          {% for k,v in top_automatismos %}
-            <div class="kv-row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>
+          {% for k,v,p in top_automatismos %}
+            <div class="kv-row kv-row-3"><div class="k">{{ k }}</div><div class="v">{{ v }}</div><div class="v">{{ p }}</div></div>
           {% endfor %}
         </div>
       </section>

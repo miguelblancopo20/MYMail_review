@@ -34,6 +34,10 @@
     hide();
     const pageStartMs = Date.now();
 
+    const pageErrorEl = document.getElementById("page-error");
+    const pageError = pageErrorEl?.dataset?.error || "";
+    const pageRefreshUrl = pageErrorEl?.dataset?.refreshUrl || "";
+
     document.querySelectorAll("form[data-overlay]").forEach((form) => {
       form.addEventListener("submit", (e) => {
         const elapsedSecondsInput = form.querySelector("#elapsedSeconds");
@@ -85,8 +89,8 @@
 
     const heartbeatEl = document.getElementById("lock-heartbeat");
     const heartbeatUrl = heartbeatEl?.dataset?.heartbeatUrl || "";
-    const refreshUrl = heartbeatEl?.dataset?.refreshUrl || "/review";
-    const initialError = heartbeatEl?.dataset?.error || "";
+    const refreshUrl = pageRefreshUrl || heartbeatEl?.dataset?.refreshUrl || window.location.href;
+    const initialError = pageError || heartbeatEl?.dataset?.error || "";
     if (initialError) showModal(initialError);
 
     const timerEl = document.getElementById("lockTimer");
@@ -163,5 +167,29 @@
         window.addEventListener(evt, sendHeartbeat, { passive: true });
       });
     }
+
+    const btnAiTematica = document.getElementById("btnAiTematica");
+    const aiTematicaResult = document.getElementById("aiTematicaResult");
+    btnAiTematica?.addEventListener("click", () => {
+      const url = btnAiTematica?.dataset?.aiUrl || "";
+      if (!url) return;
+      if (aiTematicaResult) aiTematicaResult.textContent = "";
+      show("Consultando IA...");
+      fetch(url, { method: "POST", headers: { "X-Requested-With": "fetch" } })
+        .then((res) => res.json().then((j) => ({ status: res.status, json: j })))
+        .then(({ status, json }) => {
+          hide();
+          if (!json?.ok) {
+            const msg = json?.error || `Error (${status})`;
+            showModal(msg);
+            return;
+          }
+          if (aiTematicaResult) aiTematicaResult.textContent = String(json?.suggestion || "");
+        })
+        .catch((err) => {
+          hide();
+          showModal(String(err || "Error consultando IA."));
+        });
+    });
   });
 })();

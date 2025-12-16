@@ -3,5 +3,7 @@ descartes.csv
 revisiones.csv
 *.venv
 config.py
+.env
+.env.*
 __pycache__*
 Validados_V3_NOVALIDADOS.xlsx

@@ -4,9 +4,14 @@ import json
 import os
 import re
 import unicodedata
+import urllib.error
+import urllib.request
+from io import BytesIO, StringIO
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+import csv
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for, send_file
 
 import config
 from mymail.entrada import EntradaKey, clear_expired_locks, refresh_lock, release_lock, validate_lock
@@ -44,6 +49,76 @@ def create_app() -> Flask:
             prev_quote_only = quote_only
         return "\n".join(out)
 
+    def version_at_least(current: str, minimum: str) -> bool:
+        def parse(v: str) -> tuple[int, int, int]:
+            parts = (v or "").strip().split(".")
+            nums = []
+            for p in parts[:3]:
+                try:
+                    nums.append(int(re.sub(r"[^0-9].*$", "", p) or "0"))
+                except Exception:
+                    nums.append(0)
+            while len(nums) < 3:
+                nums.append(0)
+            return tuple(nums)  # type: ignore[return-value]
+
+        return parse(current) >= parse(minimum)
+
+    def azure_openai_responses(messages: list[dict], *, temperature: float = 0.2, max_output_tokens: int = 350) -> str:
+        endpoint = (getattr(config, "AZURE_OPENAI_ENDPOINT", "") or "").strip().rstrip("/")
+        api_key = (getattr(config, "AZURE_OPENAI_API_KEY", "") or "").strip()
+        deployment = (getattr(config, "AZURE_OPENAI_DEPLOYMENT", "") or "").strip()
+        if not endpoint or not api_key or not deployment:
+            raise RuntimeError("Faltan credenciales de Azure OpenAI (endpoint/api_key/deployment) en config.py o entorno.")
+
+        url = f"{endpoint}/openai/v1/responses"
+        payload = {
+            "model": deployment,
+            "input": messages,
+            "temperature": float(temperature),
+            "max_output_tokens": int(max_output_tokens),
+        }
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "api-key": api_key,
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            msg = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else str(exc)
+            raise RuntimeError(f"Azure OpenAI error: {exc.code} {msg}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"No se pudo conectar con Azure OpenAI: {exc}") from exc
+
+        try:
+            obj = json.loads(body)
+            output = obj.get("output") or []
+            if isinstance(output, list) and output:
+                parts = []
+                for item in output:
+                    content = (item or {}).get("content") or []
+                    for c in content:
+                        if (c or {}).get("type") == "output_text":
+                            txt = str((c or {}).get("text") or "")
+                            if txt:
+                                parts.append(txt)
+                text = "\n".join(parts).strip()
+                if text:
+                    return text
+            text = str(obj.get("output_text") or "").strip()
+            if text:
+                return text
+            raise RuntimeError("Respuesta vacía de Azure OpenAI.")
+        except Exception as exc:
+            raise RuntimeError(f"Respuesta inválida de Azure OpenAI: {body[:500]}") from exc
+
     def format_ts(value: str) -> str:
         if not value:
             return ""
@@ -55,6 +130,21 @@ def create_app() -> Flask:
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             dt = dt.astimezone(timezone.utc)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return value
+
+    def format_ts_madrid(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            v = value.strip()
+            if v.endswith("Z"):
+                v = v[:-1] + "+00:00"
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(ZoneInfo("Europe/Madrid"))
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             return value
@@ -261,11 +351,53 @@ def create_app() -> Flask:
             pending=state.pending_count(),
             current_user=session.get("user", ""),
             can_stats=(session.get("role") or "") == ROLE_ADMIN,
+            can_ai=version_at_least(app_version, "1.0.0"),
             app_version=app_version,
             title="Revisor de Mayordomo Mail",
             error=error,
             lock_until_ms=lock_until_ms,
         )
+
+    @app.post("/ai/tematica")
+    def ai_tematica():
+        if not session.get("authenticated"):
+            return jsonify({"ok": False, "error": "No autenticado."}), 401
+        if not version_at_least(app_version, "1.0.0"):
+            return jsonify({"ok": False, "error": "Funcionalidad no disponible para esta versión."}), 404
+
+        state = get_state()
+        username = session.get("user", "")
+        record = state.current_record(owner=username)
+        if not record:
+            return jsonify({"ok": False, "error": "No hay correo activo para analizar."}), 409
+
+        try:
+            from helpers.prompts import build_tematica_messages
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"No se pudo cargar prompts: {exc}"}), 500
+
+        subject = str(record.get("Subject", "") or "")
+        body_text = normalize_multiline(str(record.get("Question", "") or ""))
+
+        items = parse_mailtoagent(str(record.get("MailToAgent", "") or ""))
+        mail_norm = {norm_key(str(k)): v for k, v in (items or [])} if items else {}
+        from_ = str(mail_norm.get("from") or mail_norm.get("remitente") or "")
+        provided_intent = str(mail_norm.get("intencion") or mail_norm.get("intención") or "")
+        provided_summary = str(mail_norm.get("resumen") or "")
+
+        messages = build_tematica_messages(
+            subject=subject,
+            from_=from_,
+            body=body_text,
+            provided_intent=provided_intent,
+            provided_summary=provided_summary,
+            theme_catalog=[],
+        )
+        try:
+            suggestion = azure_openai_responses(messages, temperature=0.2, max_output_tokens=600)
+            return jsonify({"ok": True, "suggestion": suggestion})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     @app.get("/refresh")
     def refresh():
@@ -295,6 +427,11 @@ def create_app() -> Flask:
             return redirect(url_for("review"))
 
         days = 14
+        try:
+            days = int(str(request.args.get("days") or days).strip())
+        except Exception:
+            days = 14
+        days = max(1, min(90, days))
         now = datetime.now(timezone.utc)
         day_keys = [(now - timedelta(days=i)).strftime("%Y%m%d") for i in range(days)]
 
@@ -306,6 +443,7 @@ def create_app() -> Flask:
                 "stats.html",
                 title="Stats",
                 current_user=session.get("user", ""),
+                app_version=app_version,
                 error=str(exc),
                 days=days,
                 total_resultados=0,
@@ -318,22 +456,34 @@ def create_app() -> Flask:
                 top_automatismos=[],
             )
 
-        def count_by(items, key):
+        def count_by(items, key, *, skip_empty: bool = False):
             out = {}
             for it in items:
                 val = str(it.get(key, "") or "")
+                if skip_empty and not val.strip():
+                    continue
                 out[val] = out.get(val, 0) + 1
             return sorted(out.items(), key=lambda kv: kv[1], reverse=True)
 
+        def with_pct(items: list[tuple[str, int]], *, total: int) -> list[tuple[str, int, str]]:
+            out = []
+            for k, v in items:
+                pct = f"{round((v / total) * 100)}%" if total else "0%"
+                out.append((k, v, pct))
+            return out
+
         total_resultados = len(resultados)
         total_descartes = len(descartes)
-        by_status = count_by(resultados, "status")
-        by_user = count_by(resultados, "user")
-        by_day = count_by(resultados, "day")
-        top_automatismos = count_by(resultados, "automatismo")[:10]
+        by_status_raw = count_by(resultados, "status", skip_empty=True)
+        top_automatismos_raw = count_by(resultados, "automatismo", skip_empty=True)[:10]
+        by_user = count_by(resultados, "user", skip_empty=True)
+        by_day = count_by(resultados, "day", skip_empty=True)
 
-        ko_count = sum(v for k, v in by_status if k.startswith("KO"))
-        duda_count = sum(v for k, v in by_status if k == "DUDA")
+        by_status = with_pct(by_status_raw, total=total_resultados)[:10]
+        top_automatismos = with_pct(top_automatismos_raw, total=total_resultados)
+
+        ko_count = sum(v for k, v in by_status_raw if k.startswith("KO"))
+        duda_count = sum(v for k, v in by_status_raw if k == "DUDA")
         ko_rate = f"{round((ko_count / total_resultados) * 100)}%" if total_resultados else "0%"
 
         return render_template(
@@ -416,6 +566,28 @@ def create_app() -> Flask:
                 if nk.startswith("parametros") and str(val).strip():
                     return str(val).strip()
             return ""
+
+        def _act_summary_proposal_from_record(record: dict) -> tuple[str, str]:
+            items = parse_mailtoagent((record or {}).get("MailToAgent", "") or "")
+            if not items:
+                return "", ""
+            mail_norm = {norm_key(str(k)): v for k, v in (items or [])}
+
+            def first_by_prefix(*prefixes: str) -> str:
+                for prefix in prefixes:
+                    for nk, val in mail_norm.items():
+                        if nk.startswith(prefix) and str(val).strip():
+                            return str(val).strip()
+                return ""
+
+            summary = first_by_prefix("resumen")
+            proposal = first_by_prefix("propuesta de actuacion", "propuesta actuacion")
+            if not proposal:
+                for nk, val in mail_norm.items():
+                    if nk.startswith("propuesta") and nk != "propuesta respuesta" and str(val).strip():
+                        proposal = str(val).strip()
+                        break
+            return summary, proposal
 
         def _record_items(record: dict) -> list[tuple[str, str]]:
             preferred = [
@@ -522,8 +694,21 @@ def create_app() -> Flask:
         selected_user = (request.args.get("revisor") or "").strip()
         selected_status = (request.args.get("estado") or "").strip()
         selected_id = (request.args.get("idcorreo") or "").strip()
+        per_page = (request.args.get("per_page") or "").strip()
+        page = (request.args.get("page") or "").strip()
         try:
-            rows = list_revisions(username=selected_user, limit=500)
+            per_page_i = int(per_page) if per_page else 10
+        except Exception:
+            per_page_i = 10
+        if per_page_i not in {10, 25, 50}:
+            per_page_i = 10
+        try:
+            page_i = int(page) if page else 1
+        except Exception:
+            page_i = 1
+        page_i = max(1, page_i)
+        try:
+            rows = list_revisions(username=selected_user, limit=5000)
         except Exception as exc:
             return render_template(
                 "stats_listado.html",
@@ -536,6 +721,10 @@ def create_app() -> Flask:
                 statuses=[],
                 selected_status=selected_status,
                 selected_id=selected_id,
+                per_page=per_page_i,
+                page=page_i,
+                total=0,
+                total_pages=1,
                 rows=[],
             )
 
@@ -556,12 +745,24 @@ def create_app() -> Flask:
                 or needle in str((r.get("record") or {}).get("IdCorreo", "") or "").lower()
             ]
 
-        for r in rows:
-            r["timestamp"] = format_ts("" if r.get("timestamp") is None else str(r.get("timestamp")))
+        total = len(rows)
+        total_pages = max(1, (total + per_page_i - 1) // per_page_i)
+        page_i = min(page_i, total_pages)
+        start = (page_i - 1) * per_page_i
+        end = start + per_page_i
+        rows_page = rows[start:end]
+
+        for r in rows_page:
+            r["timestamp"] = format_ts_madrid("" if r.get("timestamp") is None else str(r.get("timestamp")))
             record = r.get("record") if isinstance(r.get("record"), dict) else {}
             r["_record_clean"] = _clean_record(record)
             r["_record_items"] = _record_items(r["_record_clean"])
             r["_record_groups"] = _group_record_items(r["_record_items"])
+            r["_otros_items"] = []
+            for g in r["_record_groups"]:
+                if str(g.get("key", "") or "") == "otros":
+                    r["_otros_items"] = list(g.get("items") or [])
+                    break
             r["_internal_note_kv"] = _parse_internal_note(str(r.get("internal_note", "") or ""))
             if r["_internal_note_kv"]:
                 lines = []
@@ -577,6 +778,9 @@ def create_app() -> Flask:
             else:
                 r["_internal_note_text"] = str(r.get("internal_note", "") or "").strip()
             r["_act_params"] = _act_params_from_record(r["_record_clean"])
+            summary, proposal = _act_summary_proposal_from_record(r["_record_clean"])
+            r["_act_summary"] = summary
+            r["_act_proposal"] = proposal
 
         return render_template(
             "stats_listado.html",
@@ -589,7 +793,101 @@ def create_app() -> Flask:
             statuses=statuses,
             selected_status=selected_status,
             selected_id=selected_id,
-            rows=rows,
+            per_page=per_page_i,
+            page=page_i,
+            total=total,
+            total_pages=total_pages,
+            rows=rows_page,
+        )
+
+    @app.get("/stats/listado/download")
+    def stats_listado_download():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede ver Estadisticas."
+            return redirect(url_for("review"))
+
+        selected_user = (request.args.get("revisor") or "").strip()
+        selected_status = (request.args.get("estado") or "").strip()
+        selected_id = (request.args.get("idcorreo") or "").strip()
+        fmt = (request.args.get("format") or "csv").strip().lower()
+        if fmt not in {"csv", "xlsx"}:
+            fmt = "csv"
+
+        rows = list_revisions(username=selected_user, limit=5000)
+        rows.sort(key=lambda it: str(it.get("timestamp", "") or ""), reverse=True)
+        if selected_status:
+            rows = [r for r in rows if str(r.get("status", "") or "").strip() == selected_status]
+        if selected_id:
+            needle = selected_id.lower()
+            rows = [
+                r
+                for r in rows
+                if needle in str(r.get("record_id", "") or "").lower()
+                or needle in str((r.get("record") or {}).get("IdCorreo", "") or "").lower()
+            ]
+
+        def row_to_dict(r: dict) -> dict:
+            rec = r.get("record") if isinstance(r.get("record"), dict) else {}
+            return {
+                "fecha_revision_madrid": format_ts_madrid("" if r.get("timestamp") is None else str(r.get("timestamp"))),
+                "revisor": str(r.get("user", "") or ""),
+                "id_correo": str(r.get("record_id", "") or "") or str(rec.get("IdCorreo", "") or ""),
+                "estado": str(r.get("status", "") or ""),
+                "automatismo": str(r.get("automatismo", "") or "") or str(rec.get("Automatismo", "") or ""),
+                "multitematica": "Sí" if bool(r.get("multitematica")) else "No",
+                "detalle_ko_mtm": str(r.get("ko_mym_reason", "") or ""),
+                "comentario_revision": str(r.get("reviewer_note", "") or ""),
+                "nota_interna": str(r.get("internal_note", "") or ""),
+                "fecha_correo": format_ts("" if rec.get("@timestamp") is None else str(rec.get("@timestamp"))),
+                "asunto": str(rec.get("Subject", "") or ""),
+                "tematica": str(rec.get("Location", "") or ""),
+                "subtematica": str(rec.get("Sublocation", "") or ""),
+            }
+
+        data_rows = [row_to_dict(r) for r in rows]
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        base = f"listado_{stamp}"
+        if fmt == "csv":
+            buf = StringIO()
+            fieldnames = list(data_rows[0].keys()) if data_rows else [
+                "fecha_revision_madrid",
+                "revisor",
+                "id_correo",
+                "estado",
+                "automatismo",
+                "multitematica",
+                "detalle_ko_mtm",
+                "comentario_revision",
+                "nota_interna",
+                "fecha_correo",
+                "asunto",
+                "tematica",
+                "subtematica",
+            ]
+            w = csv.DictWriter(buf, fieldnames=fieldnames)
+            w.writeheader()
+            for it in data_rows:
+                w.writerow(it)
+            out = BytesIO(buf.getvalue().encode("utf-8"))
+            out.seek(0)
+            return send_file(out, as_attachment=True, download_name=f"{base}.csv", mimetype="text/csv; charset=utf-8")
+
+        try:
+            import pandas as pd
+        except Exception as exc:
+            raise RuntimeError("Falta pandas para exportar Excel (pip install -r requirements.txt)") from exc
+
+        df = pd.DataFrame(data_rows)
+        out = BytesIO()
+        df.to_excel(out, index=False)
+        out.seek(0)
+        return send_file(
+            out,
+            as_attachment=True,
+            download_name=f"{base}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     @app.post("/action")

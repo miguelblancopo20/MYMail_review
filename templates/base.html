@@ -20,11 +20,18 @@
         <div class="mymail-modal-title" id="mymail-modal-title">Aviso</div>
         <div class="mymail-modal-body" id="mymail-modal-text"></div>
         <div class="mymail-modal-actions">
-          <button type="button" class="btn btn-primary" id="mymail-modal-refresh">Refrescar</button>
+          <button type="button" class="btn btn-primary" id="mymail-modal-refresh">Intentar de nuevo</button>
           <button type="button" class="btn btn-ghost" id="mymail-modal-close">Cerrar</button>
         </div>
       </div>
     </div>
+
+    <div
+      id="page-error"
+      class="hidden"
+      data-error="{{ (error or '') | e }}"
+      data-refresh-url="{{ request.full_path if request else '' }}"
+    ></div>
 
     {% block body %}{% endblock %}
   </body>

@@ -6,27 +6,24 @@
       <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
     </div>
     <div class="topbar-fields">
-      <div class="topbar-field"><span>Vista</span><strong>Estadísticas</strong></div>
-      <div class="topbar-field"><span>Sección</span><strong>Listado</strong></div>
+      <div class="topbar-field"><span>Vista</span><strong>Listado</strong></div>
     </div>
     <div class="topbar-right">
       <div class="pill">{{ current_user }}</div>
-      <a class="btn btn-ghost" href="{{ url_for('stats') }}">Estadisticas</a>
+      <a class="btn btn-ghost" href="{{ url_for('stats') }}">Estadísticas</a>
       <a class="btn btn-ghost" href="{{ url_for('review') }}">Continuar revisando</a>
       <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
     </div>
   </header>
 
   <main class="page page--full">
-    {% if error %}
-      <div class="alert">{{ error }}</div>
-    {% endif %}
-
     <section class="section section--review" style="margin-top:0">
       <div class="section-title">Revisiones (Blob)</div>
 
       <form method="get" class="actions" style="justify-content:flex-start; gap:12px; flex-wrap:wrap">
-        <div class="field" style="min-width:280px">
+        <input type="hidden" name="page" value="1" />
+        <input type="hidden" name="per_page" value="{{ per_page or 10 }}" />
+        <div class="field" style="min-width:260px">
           <span>Filtrar por Revisor</span>
           <select name="revisor">
             <option value="" {% if not selected_user %}selected{% endif %}>Todos</option>
@@ -35,10 +32,7 @@
             {% endfor %}
           </select>
         </div>
-        <div class="field" style="min-width:220px">
-          <span>Buscar ID Correo</span>
-          <input name="idcorreo" value="{{ selected_id or '' }}" placeholder="Ej: 12345" />
-        </div>
+
         <div class="field" style="min-width:240px">
           <span>Filtrar por Estado</span>
           <select name="estado">
@@ -48,10 +42,51 @@
             {% endfor %}
           </select>
         </div>
+
+        <div class="field" style="min-width:220px">
+          <span>Buscar ID Correo</span>
+          <input name="idcorreo" value="{{ selected_id or '' }}" placeholder="Ej: 12345" />
+        </div>
+
         <div class="actions" style="align-items:flex-end">
           <button class="btn btn-primary" type="submit">Aplicar</button>
+          <details>
+            <summary class="btn btn-ghost">Descargar</summary>
+            <div class="kv-list" style="margin-top:8px">
+              <a class="btn btn-ghost" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='csv') }}">CSV</a>
+              <a class="btn btn-ghost" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='xlsx') }}">Excel</a>
+            </div>
+          </details>
         </div>
       </form>
+
+      <div class="actions" style="justify-content:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap">
+        <div class="pill">Total: {{ total }}</div>
+        <div class="field" style="min-width:140px">
+          <span>Filas</span>
+          <form method="get" class="actions" style="gap:6px">
+            <input type="hidden" name="revisor" value="{{ selected_user or '' }}" />
+            <input type="hidden" name="estado" value="{{ selected_status or '' }}" />
+            <input type="hidden" name="idcorreo" value="{{ selected_id or '' }}" />
+            <select name="per_page" onchange="this.form.submit()">
+              {% for opt in [10,25,50] %}
+                <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </div>
+        <div class="actions" style="gap:6px; flex-wrap:wrap">
+          {% if page > 1 %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">«</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">‹</a>
+          {% endif %}
+          <div class="pill">Página {{ page }} / {{ total_pages }}</div>
+          {% if page < total_pages %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">›</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">»</a>
+          {% endif %}
+        </div>
+      </div>
 
       <div style="overflow:auto; margin-top:10px">
         <table class="tbl">
@@ -67,31 +102,24 @@
           </thead>
           <tbody>
             {% for r in rows %}
+              {% set rec = (r.get("_record_clean") or {}) %}
               <tr>
                 <td>{{ r.get("timestamp","") }}</td>
                 <td>{{ r.get("user","") }}</td>
                 <td>{{ r.get("record_id","") }}</td>
                 <td>{{ r.get("status","") }}</td>
                 <td>{{ r.get("automatismo","") }}</td>
-                <td style="min-width:320px">
+                <td style="min-width:340px">
                   <details>
                     <summary>Ver</summary>
                     <div class="tbl-detail">
-                      {% set rec = (r.get("_record_clean") or {}) %}
-
                       <div class="section section--review section--compact" style="margin:0; padding:12px">
                         <div class="section-title" style="margin-bottom:10px">Revisión EY</div>
-                        <div class="grid-3">
+                        <div class="grid-4">
                           <div class="kv kv-vert"><div class="k">Detalle KO MTM</div><div class="v">{{ r.get("ko_mym_reason","") }}</div></div>
                           <div class="kv kv-vert"><div class="k">Comentario de revisión</div><div class="v">{{ r.get("reviewer_note","") }}</div></div>
-                          <div class="kv kv-vert">
-                            <div class="k">Nota interna</div>
-                            <div class="v">{{ r.get("_internal_note_text","") }}</div>
-                          </div>
-                        </div>
-                        <div class="kv-row" style="margin-top:10px">
-                          <div class="k">Multitemática</div>
-                          <div class="v">{{ "Sí" if r.get("multitematica") else "No" }}</div>
+                          <div class="kv kv-vert"><div class="k">Nota interna</div><div class="v">{{ r.get("_internal_note_text","") }}</div></div>
+                          <div class="kv kv-vert"><div class="k">Multitemática</div><div class="v">{{ "Sí" if r.get("multitematica") else "No" }}</div></div>
                         </div>
                       </div>
 
@@ -114,109 +142,36 @@
                         <div class="kv kv-vert" style="margin-top:10px"><div class="k">Correo completo</div><div class="v">{{ rec.get("Question","") }}</div></div>
                       </div>
 
-                      {% for g in (r.get("_record_groups") or []) %}
-                        {% set gkey = g.get("key","") %}
-                        {% set title = g.get("title","") %}
-
-                        {% if gkey == "act" %}
-                          <div class="section section--act" style="margin-top:10px; padding:12px">
-                            <div class="section-title" style="margin-bottom:10px">Actuación MY</div>
-                            <div class="grid-3">
-                              <div class="kv kv-vert"><div class="k">Temática</div><div class="v">{{ rec.get("Location","") }}</div></div>
-                              <div class="kv kv-vert"><div class="k">Subtemática</div><div class="v">{{ rec.get("Sublocation","") }}</div></div>
-                              <div class="kv kv-vert"><div class="k">Automatismo</div><div class="v">{{ rec.get("Automatismo","") }}</div></div>
-                            </div>
-                            {% if r.get("_act_params") %}
-                              <div class="kv kv-vert" style="margin-top:10px"><div class="k">Parámetros</div><div class="v">{{ r.get("_act_params","") }}</div></div>
-                            {% endif %}
-                            {% if g.get("items") %}
-                              <div class="ia-grid" style="margin-top:10px">
-                                {% for k, v in (g.get("items") or []) %}
-                                  <div class="kv kv-vert">
-                                    <div class="k">{{ k }}</div>
-                                    <div class="v">{{ v }}</div>
-                                  </div>
-                                {% endfor %}
-                              </div>
-                            {% endif %}
+                      <div class="section section--act" style="margin-top:10px; padding:12px">
+                        <div class="section-title" style="margin-bottom:10px">Actuación MY</div>
+                        <div class="grid-3">
+                          <div class="kv kv-vert"><div class="k">Temática</div><div class="v">{{ rec.get("Location","") }}</div></div>
+                          <div class="kv kv-vert"><div class="k">Subtemática</div><div class="v">{{ rec.get("Sublocation","") }}</div></div>
+                          <div class="kv kv-vert"><div class="k">Automatismo</div><div class="v">{{ rec.get("Automatismo","") }}</div></div>
+                        </div>
+                        {% if r.get("_act_summary") or r.get("_act_proposal") %}
+                          <div class="ia-grid" style="margin-top:10px">
+                            <div class="kv kv-vert"><div class="k">Resumen</div><div class="v">{{ r.get("_act_summary","") }}</div></div>
+                            <div class="kv kv-vert"><div class="k">Propuesta de actuación</div><div class="v">{{ r.get("_act_proposal","") }}</div></div>
                           </div>
-                        {% elif gkey == "otros" %}
-                          <details style="margin-top:10px">
-                            <summary>Otros</summary>
-                            <div class="section" style="margin-top:8px; padding:12px">
-                              <div class="ia-grid">
-                                {% for k, v in (g.get("items") or []) %}
-                                  <div class="kv kv-vert">
-                                    <div class="k">{{ k }}</div>
-                                    <div class="v">{{ v }}</div>
-                                  </div>
-                                {% endfor %}
-                              </div>
-                            </div>
-                          </details>
                         {% endif %}
+                        {% if r.get("_act_params") %}
+                          <div class="kv kv-vert" style="margin-top:10px"><div class="k">Parámetros</div><div class="v">{{ r.get("_act_params","") }}</div></div>
+                        {% endif %}
+                      </div>
 
-                        {% if false %}
-                          {% if title == "Actuación MY" %}
-                            <div class="section section--act" style="margin-top:10px; padding:12px">
-                              <div class="section-title" style="margin-bottom:10px">Actuación MY</div>
-                              <div class="grid-3">
-                                <div class="kv kv-vert"><div class="k">Temática</div><div class="v">{{ rec.get("Location","") }}</div></div>
-                                <div class="kv kv-vert"><div class="k">Subtemática</div><div class="v">{{ rec.get("Sublocation","") }}</div></div>
-                                <div class="kv kv-vert"><div class="k">Automatismo</div><div class="v">{{ rec.get("Automatismo","") }}</div></div>
-                              </div>
-                              {% if r.get("_act_params") %}
-                                <div class="kv kv-vert" style="margin-top:10px"><div class="k">Parámetros</div><div class="v">{{ r.get("_act_params","") }}</div></div>
-                              {% endif %}
-                              <div class="ia-grid" style="margin-top:10px">
-                                {% for k, v in (g.get("items") or []) %}
-                                  {% if k != "Temática" and k != "Subtemática" and k != "Automatismo" %}
-                                    <div class="kv kv-vert">
-                                      <div class="k">{{ k }}</div>
-                                      <div class="v">{{ v }}</div>
-                                    </div>
-                                  {% endif %}
-                                {% endfor %}
-                              </div>
+                      {% if r.get("_otros_items") %}
+                        <details style="margin-top:10px">
+                          <summary>Otros</summary>
+                          <div class="section" style="margin-top:8px; padding:12px">
+                            <div class="ia-grid">
+                              {% for k, v in (r.get("_otros_items") or []) %}
+                                <div class="kv kv-vert"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>
+                              {% endfor %}
                             </div>
-                          {% elif title == "Otros" %}
-                            <details style="margin-top:10px">
-                              <summary>Otros</summary>
-                              <div class="section" style="margin-top:8px; padding:12px">
-                                <div class="ia-grid">
-                                  {% for k, v in (g.get("items") or []) %}
-                                    <div class="kv kv-vert">
-                                      <div class="k">{{ k }}</div>
-                                      <div class="v">{{ v }}</div>
-                                    </div>
-                                  {% endfor %}
-                                </div>
-                              </div>
-                            </details>
-                          {% elif title == "Feedback Agente" %}
-                            {% set sec_cls = "section section--agent" %}
-                          {% elif title == "Otros" %}
-                            {% set sec_cls = "section" %}
-                          {% else %}
-                            {% set sec_cls = "section" %}
-                          {% endif %}
-                          {% if title != "Actuación MY" and title != "Otros" %}
-                            <div class="{{ sec_cls }}" style="margin-top:10px; padding:12px">
-                              <div class="section-title" style="margin-bottom:10px">{{ title }}</div>
-                              <div class="ia-grid">
-                                {% for k, v in (g.get("items") or []) %}
-                                  {% if k != "ID Correo" and k != "Asunto" and k != "Fecha" and k != "Correo completo" %}
-                                    <div class="kv kv-vert">
-                                      <div class="k">{{ k }}</div>
-                                      <div class="v">{{ v }}</div>
-                                    </div>
-                                  {% endif %}
-                                {% endfor %}
-                              </div>
-                            </div>
-                          {% endif %}
-                        {% endif %}
-                      {% endfor %}
+                          </div>
+                        </details>
+                      {% endif %}
 
                       <details style="margin-top:10px">
                         <summary>JSON completo</summary>

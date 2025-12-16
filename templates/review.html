@@ -160,6 +160,18 @@
             </div>
           </form>
         </section>
+        {% if can_ai %}
+          <section class="section section--act">
+            <div class="section-title">Utiliza la IA</div>
+            <div class="actions" style="justify-content:flex-start">
+              <button type="button" class="btn btn-primary" id="btnAiTematica" data-ai-url="{{ url_for('ai_tematica') }}">Sugerir temática</button>
+            </div>
+            <div class="kv kv-vert" style="margin-top:10px">
+              <div class="k">Sugerencia</div>
+              <div class="v" id="aiTematicaResult" style="min-height:52px"></div>
+            </div>
+          </section>
+        {% endif %}
       </div>
     </div>
   </main>
