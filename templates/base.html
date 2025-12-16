@@ -15,6 +15,17 @@
       <div class="mymail-overlay-text" id="mymail-overlay-text">Procesando...</div>
     </div>
 
+    <div id="mymail-modal" class="mymail-modal" aria-hidden="true">
+      <div class="mymail-modal-card" role="dialog" aria-modal="true" aria-labelledby="mymail-modal-title">
+        <div class="mymail-modal-title" id="mymail-modal-title">Aviso</div>
+        <div class="mymail-modal-body" id="mymail-modal-text"></div>
+        <div class="mymail-modal-actions">
+          <button type="button" class="btn btn-primary" id="mymail-modal-refresh">Refrescar</button>
+          <button type="button" class="btn btn-ghost" id="mymail-modal-close">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
     {% block body %}{% endblock %}
   </body>
 </html>

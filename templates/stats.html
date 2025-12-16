@@ -6,13 +6,14 @@
       <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
     </div>
     <div class="topbar-fields">
-      <div class="topbar-field"><span>Vista</span><strong>Stats</strong></div>
+      <div class="topbar-field"><span>Vista</span><strong>Estadísticas</strong></div>
       <div class="topbar-field"><span>Ventana</span><strong>{{ days }} días</strong></div>
     </div>
     <div class="topbar-right">
       <div class="pill">{{ current_user }}</div>
-      <a class="btn btn-ghost" href="{{ url_for('review') }}">Volver</a>
-      <a class="btn btn-ghost" href="{{ url_for('logout') }}">Salir</a>
+      <a class="btn btn-ghost" href="{{ url_for('stats_listado') }}">Listado</a>
+      <a class="btn btn-ghost" href="{{ url_for('review') }}">Continuar revisando</a>
+      <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
     </div>
   </header>
 

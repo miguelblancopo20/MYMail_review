@@ -7,7 +7,8 @@ from typing import Dict, List, Optional
 
 from flask import session
 
-from mymail.entrada import EntradaKey, delete_record, get_record, list_keys
+from mymail.entrada import LOCK_TTL_SECONDS, EntradaKey, delete_record, get_record, list_keys, refresh_lock, release_lock
+from mymail.entrada import try_acquire_lock, validate_lock
 from mymail.tables import write_descarte, write_resultado
 
 _LOCK = threading.Lock()
@@ -28,7 +29,9 @@ def reset_state() -> None:
     if not sid:
         return
     with _LOCK:
-        _STATES.pop(sid, None)
+        state = _STATES.pop(sid, None)
+    if state is not None:
+        state.release_current_lock(owner=session.get("user", ""))
 
 
 def get_state() -> "ReviewState":
@@ -47,6 +50,7 @@ class ReviewState:
     queue: List[EntradaKey] = field(default_factory=list)
     current_key: Optional[EntradaKey] = None
     current: Dict[str, str] = field(default_factory=dict)
+    lock_token: str = ""
     excel_missing: bool = False
 
     def ensure_loaded(self) -> None:
@@ -76,18 +80,62 @@ class ReviewState:
     def _next_key(self) -> Optional[EntradaKey]:
         return self.queue.pop() if self.queue else None
 
-    def current_record(self) -> Dict[str, str]:
-        if not self.current_key:
-            self.current_key = self._next_key()
-            self.current = {}
-        if not self.current_key:
-            return {}
-        if not self.current:
-            try:
-                self.current = get_record(self.current_key)
-            except Exception:
+    def current_record(self, *, owner: str) -> Dict[str, str]:
+        owner = (owner or "").strip()
+        while True:
+            if not self.current_key:
+                self.current_key = self._next_key()
                 self.current = {}
-        return self.current
+                self.lock_token = ""
+
+            if not self.current_key:
+                return {}
+
+            if not self.lock_token:
+                acquired = try_acquire_lock(self.current_key, owner=owner, ttl_seconds=LOCK_TTL_SECONDS)
+                if not acquired:
+                    self.current_key = None
+                    self.current = {}
+                    self.lock_token = ""
+                    continue
+                self.lock_token, _ = acquired
+
+            if not self.current:
+                try:
+                    self.current = get_record(self.current_key)
+                except Exception:
+                    self.release_current_lock(owner=owner)
+                    self.current_key = None
+                    self.current = {}
+                    self.lock_token = ""
+                    continue
+
+            return self.current
+
+    def release_current_lock(self, *, owner: str) -> None:
+        owner = (owner or "").strip()
+        if not owner:
+            return
+        if not self.current_key or not self.lock_token:
+            return
+        release_lock(self.current_key, owner=owner, token=self.lock_token)
+        self.lock_token = ""
+
+    def refresh_current_lock(self, *, owner: str) -> bool:
+        if not self.current_key or not self.lock_token:
+            return False
+        new_until = refresh_lock(self.current_key, owner=owner, token=self.lock_token, ttl_seconds=LOCK_TTL_SECONDS)
+        return bool(new_until)
+
+    def ensure_current_lock_valid(self, *, owner: str) -> bool:
+        if not self.current_key or not self.lock_token:
+            return False
+        return validate_lock(self.current_key, owner=owner, token=self.lock_token)
+
+    def abandon_current(self) -> None:
+        self.current_key = None
+        self.current = {}
+        self.lock_token = ""
 
     def _drop_current(self) -> None:
         if not self.current_key:
@@ -98,9 +146,10 @@ class ReviewState:
         finally:
             self.current_key = None
             self.current = {}
+            self.lock_token = ""
 
     def skip_current(self, *, username: str) -> None:
-        record = self.current_record()
+        record = self.current_record(owner=username)
         if not record:
             return
         write_descarte(username=username, record=record)
@@ -114,8 +163,9 @@ class ReviewState:
         reviewer_note: str,
         internal_note: str,
         ko_mym_reason: str = "",
+        multitematica: bool = False,
     ) -> None:
-        record = self.current_record()
+        record = self.current_record(owner=username)
         if not record:
             return
         write_resultado(
@@ -125,5 +175,6 @@ class ReviewState:
             ko_mym_reason=ko_mym_reason,
             reviewer_note=reviewer_note,
             internal_note=internal_note,
+            multitematica=multitematica,
         )
         self._drop_current()

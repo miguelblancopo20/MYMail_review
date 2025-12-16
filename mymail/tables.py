@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
+from mymail.revisiones_blob import upload_revision
 
 
 def _utcnow() -> datetime:
@@ -52,9 +53,25 @@ def _table(name: str):
 class AuthResult:
     ok: bool
     reason: str = ""
+    role: str = ""
 
 
-def create_user(username: str, password: str) -> None:
+ROLE_REVISOR = "Revisor"
+ROLE_ADMIN = "Administrador"
+
+
+def normalize_role(role: str) -> str:
+    role = (role or "").strip()
+    if not role:
+        return ROLE_REVISOR
+    if role.lower() in {"admin", "administrador", "administrator"}:
+        return ROLE_ADMIN
+    if role.lower() in {"revisor", "reviewer"}:
+        return ROLE_REVISOR
+    return ROLE_REVISOR
+
+
+def create_user(username: str, password: str, *, role: str = ROLE_REVISOR) -> None:
     username = (username or "").strip()
     if not username:
         raise ValueError("username vacío")
@@ -63,14 +80,48 @@ def create_user(username: str, password: str) -> None:
 
     now = _utcnow()
     client = _table(config.TABLE_USERS)
+    role = normalize_role(role)
+    if username.lower() == "admin":
+        role = ROLE_ADMIN
     entity = {
         "PartitionKey": "users",
         "RowKey": username,
         "password_hash": generate_password_hash(password),
+        "role": role,
         "active": True,
         "created_at": now.isoformat(),
     }
     client.upsert_entity(mode="merge", entity=entity)
+
+
+def set_user_role(username: str, role: str) -> None:
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("username vac︽")
+    role = normalize_role(role)
+    if username.lower() == "admin":
+        role = ROLE_ADMIN
+    client = _table(config.TABLE_USERS)
+    entity = {"PartitionKey": "users", "RowKey": username, "role": role}
+    client.upsert_entity(mode="merge", entity=entity)
+
+
+def list_users() -> list[dict[str, str]]:
+    client = _table(config.TABLE_USERS)
+    out: list[dict[str, str]] = []
+    try:
+        for ent in client.query_entities(query_filter="PartitionKey eq 'users'"):
+            out.append(
+                {
+                    "username": str(ent.get("RowKey", "") or ""),
+                    "role": normalize_role(str(ent.get("role", "") or ROLE_REVISOR)),
+                    "active": "1" if bool(ent.get("active", True)) else "0",
+                }
+            )
+    except Exception:
+        return []
+    out.sort(key=lambda u: u.get("username", ""))
+    return out
 
 
 def verify_user(username: str, password: str) -> AuthResult:
@@ -91,7 +142,10 @@ def verify_user(username: str, password: str) -> AuthResult:
     if not pwd_hash or not check_password_hash(pwd_hash, password):
         return AuthResult(False, "invalid")
 
-    return AuthResult(True, "")
+    role = normalize_role(str(entity.get("role", "") or ROLE_REVISOR))
+    if username.lower() == "admin":
+        role = ROLE_ADMIN
+    return AuthResult(True, "", role=role)
 
 
 def log_click(
@@ -128,6 +182,7 @@ def write_resultado(
     reviewer_note: str,
     internal_note: str,
     ko_mym_reason: str = "",
+    multitematica: bool = False,
 ) -> None:
     now = _utcnow()
     client = _table(config.TABLE_RESULTADOS)
@@ -142,11 +197,33 @@ def write_resultado(
         "automatismo": record.get("Automatismo", "") or "",
         "status": status,
         "ko_mym_reason": ko_mym_reason or "",
+        "multitematica": bool(multitematica),
         "reviewer_note": reviewer_note or "",
         "internal_note": internal_note or "",
         "record_json": json.dumps(record, ensure_ascii=False),
     }
     client.create_entity(entity=entity)
+
+    try:
+        upload_revision(
+            {
+                "timestamp": now.isoformat(),
+                "user": username or "",
+                "role": "",
+                "record_id": record.get("IdCorreo", "") or "",
+                "automatismo": record.get("Automatismo", "") or "",
+                "status": status,
+                "ko_mym_reason": ko_mym_reason or "",
+                "multitematica": bool(multitematica),
+                "reviewer_note": reviewer_note or "",
+                "internal_note": internal_note or "",
+                "record": record,
+            },
+            username=username or "",
+            reviewed_at=now,
+        )
+    except Exception:
+        pass
 
 
 def write_descarte(*, username: str, record: Dict[str, str]) -> None:

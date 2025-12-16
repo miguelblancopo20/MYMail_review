@@ -7,17 +7,33 @@
     </div>
     <div class="topbar-fields">
       <div class="topbar-field"><span>Fecha</span><strong>{{ record.get("@timestamp","") }}</strong></div>
-      <div class="topbar-field"><span>ID Correo</span><strong>{{ record.get("IdCorreo","") }}</strong></div>
+      <div class="topbar-field">
+        <span>ID Correo</span>
+        <div class="topbar-idline">
+          <strong>{{ record.get("IdCorreo","") }}</strong>
+          <span class="topbar-timer" id="lockTimer" data-lock-until-ms="{{ lock_until_ms or '' }}">--:--</span>
+        </div>
+      </div>
     </div>
     <div class="topbar-right">
       <div class="pill">Pendientes: {{ pending }}</div>
       <div class="pill">{{ current_user }}</div>
-      <a class="btn btn-ghost" href="{{ url_for('stats') }}">Stats</a>
-      <a class="btn btn-ghost" href="{{ url_for('logout') }}">Salir</a>
+      {% if can_stats %}
+        <a class="btn btn-ghost" href="{{ url_for('stats_listado') }}">Listado</a>
+        <a class="btn btn-ghost" href="{{ url_for('stats') }}">Estadísticas</a>
+      {% endif %}
+      <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
     </div>
   </header>
 
   <main class="page page--full">
+    <div
+      id="lock-heartbeat"
+      class="hidden"
+      data-heartbeat-url="{{ url_for('heartbeat') }}"
+      data-refresh-url="{{ url_for('refresh') }}"
+      data-error="{{ (error or '') | e }}"
+    ></div>
     <div class="layout">
       <div class="layout-left">
         <section class="section section--mail">
@@ -50,11 +66,12 @@
         <section class="section section--act">
           <div class="section-title">Actuación MY</div>
 
-          <div class="meta-row" title="Automatismo · Ficha · Categorización · Acción">
+          <div class="meta-row" title="Temática · Subtemática · Acción · Automatismo · Ficha">
+            <div class="meta-item"><span>Temática</span><strong>{{ record.get("Location","") or "—" }}</strong></div>
+            <div class="meta-item"><span>Subtemática</span><strong>{{ record.get("Sublocation","") or "—" }}</strong></div>
+            <div class="meta-item"><span>Acción</span><strong>{{ mail_meta.get("Acción") or "—" }}</strong></div>
             <div class="meta-item"><span>Automatismo</span><strong>{{ record.get("Automatismo","") or "—" }}</strong></div>
             <div class="meta-item"><span>Ficha</span><strong>{{ mail_meta.get("Ficha") or "—" }}</strong></div>
-            <div class="meta-item"><span>Categorización</span><strong>{{ mail_meta.get("Categorización") or "—" }}</strong></div>
-            <div class="meta-item"><span>Acción</span><strong>{{ mail_meta.get("Acción") or "—" }}</strong></div>
           </div>
 
           {% if act_summary %}
@@ -105,19 +122,20 @@
 
         <section class="section section--review rightcol-review">
           <div class="section-title">Revisión EY</div>
-          {% if error %}
-            <div class="alert">{{ error }}</div>
-          {% endif %}
 
           <form method="post" action="{{ url_for('action') }}" class="stack" data-overlay id="reviewForm">
             <div class="field">
               <span>Estado revisión <span class="req-marker">*</span></span>
               <select name="status" id="statusSelect">
-                {% for opt in ["Pendiente","OK","KO MYM","KO AGENTE","DUDA"] %}
+                {% for opt in ["Pendiente","OK","KO MYM","KO AGENTE","DUDA","FDS"] %}
                   <option value="{{ opt }}" {% if opt == "Pendiente" %}selected{% endif %}>{{ opt }}</option>
                 {% endfor %}
               </select>
             </div>
+            <label class="checkbox">
+              <input type="checkbox" name="multitematica" value="1" />
+              <span>Multitematica (opcional)</span>
+            </label>
             <div class="field hidden" id="koMymReasonWrap">
               <span>Detalle KO MYM <span class="req-marker" id="reqKoMym">*</span></span>
               <select name="ko_mym_reason" id="koMymReason">

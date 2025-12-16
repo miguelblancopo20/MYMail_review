@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import config
 
@@ -37,6 +37,7 @@ def _table():
 
 DEFAULT_PARTITION = "active"
 _MAX_TABLE_STRING_CHARS = 30000  # safe margin vs 32K UTF-16 limit
+LOCK_TTL_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,194 @@ def _download_blob_text(blob_name: str) -> str:
     blob_client = service.get_blob_client(container=_blob_container(), blob=blob_name)
     data = blob_client.download_blob().readall()
     return data.decode("utf-8", errors="replace")
+
+
+def _parse_dt(value: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        v = value.strip()
+        if v.endswith("Z"):
+            v = v[:-1] + "+00:00"
+        dt = datetime.fromisoformat(v)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _lock_until(now: datetime, ttl_seconds: int) -> datetime:
+    ttl = max(1, int(ttl_seconds))
+    return now + timedelta(seconds=ttl)
+
+
+def try_acquire_lock(key: EntradaKey, *, owner: str, ttl_seconds: int = LOCK_TTL_SECONDS) -> Optional[tuple[str, datetime]]:
+    owner = (owner or "").strip()
+    if not owner:
+        return None
+
+    client = _table()
+    now = _utcnow()
+
+    try:
+        ent = client.get_entity(partition_key=key.partition_key, row_key=key.row_key)
+    except Exception:
+        return None
+
+    current_owner = str(ent.get("lock_owner", "") or "")
+    current_token = str(ent.get("lock_token", "") or "")
+    until = _parse_dt(str(ent.get("lock_until", "") or ""))
+    is_free = (not current_owner) or (until is None) or (until <= now)
+    if not is_free:
+        return None
+
+    token = uuid.uuid4().hex
+    ent["lock_owner"] = owner
+    ent["lock_token"] = token
+    ent["lock_acquired_at"] = now.isoformat()
+    until_dt = _lock_until(now, ttl_seconds)
+    ent["lock_until"] = until_dt.isoformat()
+
+    etag = ent.get("etag") or ent.get("odata.etag") or "*"
+    try:
+        from azure.core import MatchConditions
+        from azure.core.exceptions import ResourceModifiedError
+
+        client.update_entity(entity=ent, mode="merge", etag=etag, match_condition=MatchConditions.IfNotModified)
+    except Exception as exc:
+        if exc.__class__.__name__ in {"ResourceModifiedError", "HttpResponseError"}:
+            return None
+        return None
+
+    return token, until_dt
+
+
+def validate_lock(key: EntradaKey, *, owner: str, token: str) -> bool:
+    owner = (owner or "").strip()
+    token = (token or "").strip()
+    if not owner or not token:
+        return False
+
+    client = _table()
+    now = _utcnow()
+    try:
+        ent = client.get_entity(partition_key=key.partition_key, row_key=key.row_key)
+    except Exception:
+        return False
+
+    if str(ent.get("lock_owner", "") or "") != owner:
+        return False
+    if str(ent.get("lock_token", "") or "") != token:
+        return False
+
+    until = _parse_dt(str(ent.get("lock_until", "") or ""))
+    if until is None or until <= now:
+        return False
+    return True
+
+
+def refresh_lock(key: EntradaKey, *, owner: str, token: str, ttl_seconds: int = LOCK_TTL_SECONDS) -> Optional[datetime]:
+    owner = (owner or "").strip()
+    token = (token or "").strip()
+    if not owner or not token:
+        return None
+
+    client = _table()
+    now = _utcnow()
+    try:
+        ent = client.get_entity(partition_key=key.partition_key, row_key=key.row_key)
+    except Exception:
+        return None
+
+    if str(ent.get("lock_owner", "") or "") != owner:
+        return None
+    if str(ent.get("lock_token", "") or "") != token:
+        return None
+
+    until = _parse_dt(str(ent.get("lock_until", "") or ""))
+    if until is None or until <= now:
+        return None
+
+    new_until = _lock_until(now, ttl_seconds)
+    ent["lock_until"] = new_until.isoformat()
+
+    etag = ent.get("etag") or ent.get("odata.etag") or "*"
+    try:
+        from azure.core import MatchConditions
+
+        client.update_entity(entity=ent, mode="merge", etag=etag, match_condition=MatchConditions.IfNotModified)
+    except Exception:
+        return None
+
+    return new_until
+
+
+def release_lock(key: EntradaKey, *, owner: str, token: str) -> bool:
+    owner = (owner or "").strip()
+    token = (token or "").strip()
+    if not owner or not token:
+        return False
+
+    client = _table()
+    try:
+        ent = client.get_entity(partition_key=key.partition_key, row_key=key.row_key)
+    except Exception:
+        return False
+
+    if str(ent.get("lock_owner", "") or "") != owner:
+        return False
+    if str(ent.get("lock_token", "") or "") != token:
+        return False
+
+    ent["lock_owner"] = ""
+    ent["lock_token"] = ""
+    ent["lock_until"] = ""
+    ent["lock_acquired_at"] = ""
+
+    etag = ent.get("etag") or ent.get("odata.etag") or "*"
+    try:
+        from azure.core import MatchConditions
+
+        client.update_entity(entity=ent, mode="merge", etag=etag, match_condition=MatchConditions.IfNotModified)
+    except Exception:
+        return False
+
+    return True
+
+
+def clear_expired_locks(partition_key: str = DEFAULT_PARTITION) -> int:
+    client = _table()
+    now = _utcnow()
+    cleared = 0
+
+    filt = f"PartitionKey eq '{partition_key}' and lock_owner ne ''"
+    select = ["PartitionKey", "RowKey", "lock_owner", "lock_token", "lock_until"]
+    try:
+        entities = list(client.query_entities(query_filter=filt, select=select))
+    except Exception:
+        return 0
+
+    for ent in entities:
+        until = _parse_dt(str(ent.get("lock_until", "") or ""))
+        if until is not None and until > now:
+            continue
+
+        ent["lock_owner"] = ""
+        ent["lock_token"] = ""
+        ent["lock_until"] = ""
+        ent["lock_acquired_at"] = ""
+
+        etag = ent.get("etag") or ent.get("odata.etag") or "*"
+        try:
+            from azure.core import MatchConditions
+
+            client.update_entity(entity=ent, mode="merge", etag=etag, match_condition=MatchConditions.IfNotModified)
+            cleared += 1
+        except Exception:
+            continue
+
+    return cleared
 
 
 def ingest_records(

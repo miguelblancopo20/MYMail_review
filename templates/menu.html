@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block body %}
+  <main class="page-center menu-wrap">
+    <div class="card menu-card">
+      <div class="menu-head">
+        <div class="menu-brand">
+          <img class="menu-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+          <div>
+            <div class="menu-title">Revisor de Mayordomo Mail</div>
+            <div class="menu-sub">v{{ app_version }} · {{ current_user }}</div>
+          </div>
+        </div>
+        <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
+      </div>
+
+      {% if error %}
+        <div class="alert">{{ error }}</div>
+      {% endif %}
+
+      <div class="menu-grid">
+        <a class="menu-tile menu-tile--primary" href="{{ url_for('review') }}">
+          <div class="menu-tile-k">Revisión</div>
+          <div class="menu-tile-v">Continuar revisando correos</div>
+        </a>
+        {% if can_stats %}
+          <a class="menu-tile" href="{{ url_for('stats') }}">
+            <div class="menu-tile-k">Estadísticas</div>
+            <div class="menu-tile-v">Indicadores y actividad</div>
+          </a>
+          <a class="menu-tile" href="{{ url_for('stats_listado') }}">
+            <div class="menu-tile-k">Listado</div>
+            <div class="menu-tile-v">Histórico de revisiones</div>
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  </main>
+{% endblock %}

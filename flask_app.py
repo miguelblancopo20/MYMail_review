@@ -6,12 +6,17 @@ import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 import config
+from mymail.entrada import EntradaKey, clear_expired_locks, refresh_lock, release_lock, validate_lock
+from mymail.entrada import get_record as entrada_get_record
+from mymail.entrada import delete_record as entrada_delete_record
 from mymail.state import get_state, reset_state
-from mymail.tables import log_click, verify_user
+from mymail.revisiones_blob import list_revisions
+from mymail.tables import ROLE_ADMIN, list_users, log_click, verify_user
 from mymail.tables import _list_by_days
+from mymail.tables import write_descarte, write_resultado
 
 
 def create_app() -> Flask:
@@ -27,7 +32,17 @@ def create_app() -> Flask:
         if not value:
             return ""
         value = value.replace("\r\n", "\n").replace("\r", "\n")
-        return re.sub(r"\n{2,}", "\n", value)
+        value = re.sub(r"\n{2,}", "\n", value)
+        lines = value.split("\n")
+        out = []
+        prev_quote_only = False
+        for ln in lines:
+            quote_only = ln.strip() == ">"
+            if quote_only and prev_quote_only:
+                continue
+            out.append(ln)
+            prev_quote_only = quote_only
+        return "\n".join(out)
 
     def format_ts(value: str) -> str:
         if not value:
@@ -76,12 +91,26 @@ def create_app() -> Flask:
     def index():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        return redirect(url_for("review"))
+        return redirect(url_for("menu"))
+
+    @app.get("/menu")
+    def menu():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        can_stats = (session.get("role") or "") == ROLE_ADMIN
+        return render_template(
+            "menu.html",
+            title="Menú",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            can_stats=can_stats,
+            error=None,
+        )
 
     @app.get("/login")
     def login():
         if session.get("authenticated"):
-            return redirect(url_for("review"))
+            return redirect(url_for("menu"))
         return render_template("login.html", error=None, title="Revisor de Mayordomo Mail", app_version=app_version)
 
     @app.post("/login")
@@ -93,9 +122,16 @@ def create_app() -> Flask:
         if auth.ok:
             session["authenticated"] = True
             session["user"] = username
+            session["role"] = auth.role or ""
             log_click(action="login", username=username, result="ok")
+            try:
+                cleared = clear_expired_locks()
+                if cleared:
+                    log_click(action="lock_cleanup", username=username, result="ok", extra={"cleared": cleared})
+            except Exception:
+                pass
             reset_state()
-            return redirect(url_for("review"))
+            return redirect(url_for("menu"))
 
         log_click(action="login", username=username, result=f"fail:{auth.reason}")
         return render_template(
@@ -109,8 +145,18 @@ def create_app() -> Flask:
     def logout():
         if session.get("authenticated") and session.get("user"):
             log_click(action="logout", username=session.get("user", ""), result="ok")
+            try:
+                lock = session.get("_lock") or {}
+                pk = str(lock.get("pk", "") or "")
+                rk = str(lock.get("rk", "") or "")
+                token = str(lock.get("token", "") or "")
+                if pk and rk and token:
+                    release_lock(EntradaKey(partition_key=pk, row_key=rk), owner=session.get("user", ""), token=token)
+                session.pop("_lock", None)
+            except Exception:
+                pass
+            reset_state()
         session.clear()
-        reset_state()
         return redirect(url_for("login"))
 
     @app.get("/review")
@@ -122,9 +168,26 @@ def create_app() -> Flask:
         if state.excel_missing:
             return render_template("done.html", message="No se puede acceder a la entrada (tabla 'entrada'). Revisa Azure y config.py.")
 
-        record = state.current_record()
+        username = session.get("user", "")
+        error = session.pop("_error", None)
+        lock_until_ms = session.get("_lock_until_ms")
+        record = state.current_record(owner=username)
         if not record:
-            return render_template("done.html", message="No quedan registros pendientes.")
+            return render_template("done.html", message="No quedan registros pendientes o disponibles.")
+
+        try:
+            if state.current_key and state.lock_token:
+                session["_lock"] = {
+                    "pk": state.current_key.partition_key,
+                    "rk": state.current_key.row_key,
+                    "token": state.lock_token,
+                }
+                new_until = refresh_lock(state.current_key, owner=username, token=state.lock_token)
+                if new_until:
+                    lock_until_ms = int(new_until.timestamp() * 1000)
+                    session["_lock_until_ms"] = lock_until_ms
+        except Exception:
+            pass
 
         record = dict(record)
         record["@timestamp"] = format_ts(str(record.get("@timestamp", "") or ""))
@@ -197,15 +260,39 @@ def create_app() -> Flask:
             act_items=act_items,
             pending=state.pending_count(),
             current_user=session.get("user", ""),
+            can_stats=(session.get("role") or "") == ROLE_ADMIN,
             app_version=app_version,
             title="Revisor de Mayordomo Mail",
-            error=request.args.get("error"),
+            error=error,
+            lock_until_ms=lock_until_ms,
         )
+
+    @app.get("/refresh")
+    def refresh():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        username = session.get("user", "")
+        lock = session.get("_lock") or {}
+        pk = str(lock.get("pk", "") or "")
+        rk = str(lock.get("rk", "") or "")
+        token = str(lock.get("token", "") or "")
+        if pk and rk and token:
+            try:
+                release_lock(EntradaKey(partition_key=pk, row_key=rk), owner=username, token=token)
+            except Exception:
+                pass
+        session.pop("_lock", None)
+        session.pop("_lock_until_ms", None)
+        reset_state()
+        return redirect(url_for("review"))
 
     @app.get("/stats")
     def stats():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede ver Estadisticas."
+            return redirect(url_for("review"))
 
         days = 14
         now = datetime.now(timezone.utc)
@@ -266,6 +353,245 @@ def create_app() -> Flask:
             top_automatismos=top_automatismos,
         )
 
+    @app.get("/stats/listado")
+    def stats_listado():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede ver Estadisticas."
+            return redirect(url_for("review"))
+
+        def _clean_record(record: dict) -> dict:
+            out = {}
+            for k, v in (record or {}).items():
+                key = str(k or "")
+                if key.startswith("Unnamed"):
+                    txt = "" if v is None else str(v)
+                    if not txt.strip() or txt.strip().lower() == "nan":
+                        continue
+                out[key] = v
+            if "@timestamp" in out:
+                out["@timestamp"] = format_ts("" if out["@timestamp"] is None else str(out["@timestamp"]))
+            if "Question" in out:
+                out["Question"] = normalize_multiline("" if out["Question"] is None else str(out["Question"]))
+            return out
+
+        def _parse_internal_note(text: str) -> list[tuple[str, str]] | None:
+            raw = (text or "").strip()
+            if not raw:
+                return None
+            if (raw.startswith("{") and raw.endswith("}")) or (raw.startswith("[") and raw.endswith("]")):
+                try:
+                    obj = json.loads(raw)
+                    if isinstance(obj, dict):
+                        return [(str(k), "" if v is None else str(v)) for k, v in obj.items()]
+                    if isinstance(obj, list):
+                        return [(f"Item {i+1}", "" if v is None else str(v)) for i, v in enumerate(obj)]
+                except Exception:
+                    pass
+            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+            pairs: list[tuple[str, str]] = []
+            for ln in lines:
+                if ":" in ln:
+                    k, v = ln.split(":", 1)
+                    pairs.append((k.strip(), v.strip()))
+                elif "=" in ln:
+                    k, v = ln.split("=", 1)
+                    pairs.append((k.strip(), v.strip()))
+            return pairs or None
+
+        def _status_options(items: list[dict]) -> list[str]:
+            preferred = ["OK", "KO MYM", "KO AGENTE", "DUDA", "FDS", "Pendiente"]
+            found = {str((it or {}).get("status", "") or "").strip() for it in (items or [])}
+            found = {s for s in found if s}
+            order = {s: i for i, s in enumerate(preferred)}
+            return sorted(found, key=lambda s: (order.get(s, 10_000), s))
+
+        def _act_params_from_record(record: dict) -> str:
+            items = parse_mailtoagent((record or {}).get("MailToAgent", "") or "")
+            if not items:
+                return ""
+            mail_norm = {norm_key(str(k)): v for k, v in (items or [])}
+            for nk, val in mail_norm.items():
+                if nk.startswith("parametros") and str(val).strip():
+                    return str(val).strip()
+            return ""
+
+        def _record_items(record: dict) -> list[tuple[str, str]]:
+            preferred = [
+                "@timestamp",
+                "IdCorreo",
+                "Subject",
+                "From",
+                "Question",
+                "Location",
+                "Sublocation",
+                "Automatismo",
+                "Validado",
+                "Motivo",
+                "Comentario",
+            ]
+
+            labels = {
+                "@timestamp": "Fecha",
+                "IdCorreo": "ID Correo",
+                "Subject": "Asunto",
+                "From": "From",
+                "Question": "Correo completo",
+                "Location": "Temática",
+                "Sublocation": "Subtemática",
+                "Accion": "Acción",
+                "Acción": "Acción",
+                "Ficha": "Ficha",
+                "Categorizacion": "Categorización",
+                "Categorización": "Categorización",
+                "Automatismo": "Automatismo",
+                "Validado": "Validado por agente",
+                "Motivo": "Motivo",
+                "Comentario": "Comentario",
+            }
+
+            def norm(v: object) -> str:
+                if v is None:
+                    return ""
+                if isinstance(v, (dict, list)):
+                    try:
+                        return json.dumps(v, ensure_ascii=False, indent=2)
+                    except Exception:
+                        return str(v)
+                return str(v)
+
+            items: list[tuple[str, str]] = []
+            used_labels: set[str] = set()
+            for k, v in (record or {}).items():
+                key = str(k or "").strip()
+                if not key:
+                    continue
+                value = norm(v)
+                if key == "@timestamp":
+                    value = format_ts(value)
+                if key == "Question":
+                    value = normalize_multiline(value)
+                value = value.strip()
+                if not value or value.lower() == "nan":
+                    continue
+                label = labels.get(key, key)
+                if label in used_labels:
+                    label = f"{label} ({key})"
+                used_labels.add(label)
+                items.append((label, value))
+
+            index = {k: i for i, k in enumerate(preferred)}
+            preferred_labels = {k: labels.get(k, k) for k in preferred}
+            order = {preferred_labels[k]: i for i, k in enumerate(preferred)}
+            items.sort(key=lambda kv: (order.get(kv[0], 10_000), kv[0].lower()))
+            return items
+
+        def _group_record_items(items: list[tuple[str, str]]) -> list[dict[str, object]]:
+            by_label = {k: v for k, v in items}
+
+            def pick(key: str, title: str, labels: list[str]) -> dict[str, object]:
+                out = []
+                for lab in labels:
+                    if lab in by_label and str(by_label.get(lab, "")).strip():
+                        out.append((lab, str(by_label[lab])))
+                return {"key": key, "title": title, "items": out}
+
+            used = set()
+            groups = [
+                pick("mail", "Datos del correo", ["Fecha", "ID Correo", "Asunto", "From", "Correo completo"]),
+                pick("act", "Actuación MY", ["Temática", "Subtemática", "Acción", "Automatismo", "Ficha"]),
+                pick("agent", "Feedback Agente", ["Validado por agente", "Motivo", "Comentario"]),
+            ]
+            for g in groups:
+                if g.get("key") == "act":
+                    g["items"] = [
+                        (k, v)
+                        for k, v in (g.get("items") or [])
+                        if k not in {"Temática", "Subtemática", "Automatismo"}
+                    ]
+            for g in groups:
+                for k, _ in (g.get("items") or []):
+                    used.add(k)
+
+            others = [(k, v) for k, v in items if k not in used]
+            if others:
+                groups.append({"key": "otros", "title": "Otros", "items": others})
+            return [g for g in groups if g.get("items")]
+
+        selected_user = (request.args.get("revisor") or "").strip()
+        selected_status = (request.args.get("estado") or "").strip()
+        selected_id = (request.args.get("idcorreo") or "").strip()
+        try:
+            rows = list_revisions(username=selected_user, limit=500)
+        except Exception as exc:
+            return render_template(
+                "stats_listado.html",
+                title="Listado",
+                current_user=session.get("user", ""),
+                app_version=app_version,
+                error=str(exc),
+                users=list_users(),
+                selected_user=selected_user,
+                statuses=[],
+                selected_status=selected_status,
+                selected_id=selected_id,
+                rows=[],
+            )
+
+        def sort_key(it: dict) -> str:
+            return str(it.get("timestamp", "") or "")
+
+        rows.sort(key=sort_key, reverse=True)
+
+        statuses = _status_options(rows)
+        if selected_status:
+            rows = [r for r in rows if str(r.get("status", "") or "").strip() == selected_status]
+        if selected_id:
+            needle = selected_id.lower()
+            rows = [
+                r
+                for r in rows
+                if needle in str(r.get("record_id", "") or "").lower()
+                or needle in str((r.get("record") or {}).get("IdCorreo", "") or "").lower()
+            ]
+
+        for r in rows:
+            r["timestamp"] = format_ts("" if r.get("timestamp") is None else str(r.get("timestamp")))
+            record = r.get("record") if isinstance(r.get("record"), dict) else {}
+            r["_record_clean"] = _clean_record(record)
+            r["_record_items"] = _record_items(r["_record_clean"])
+            r["_record_groups"] = _group_record_items(r["_record_items"])
+            r["_internal_note_kv"] = _parse_internal_note(str(r.get("internal_note", "") or ""))
+            if r["_internal_note_kv"]:
+                lines = []
+                for k, v in r["_internal_note_kv"]:
+                    k = str(k or "").strip()
+                    v = str(v or "").strip()
+                    if k or v:
+                        if k and v:
+                            lines.append(f"{k}: {v}")
+                        else:
+                            lines.append(k or v)
+                r["_internal_note_text"] = "\n".join(lines).strip()
+            else:
+                r["_internal_note_text"] = str(r.get("internal_note", "") or "").strip()
+            r["_act_params"] = _act_params_from_record(r["_record_clean"])
+
+        return render_template(
+            "stats_listado.html",
+            title="Listado",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=None,
+            users=list_users(),
+            selected_user=selected_user,
+            statuses=statuses,
+            selected_status=selected_status,
+            selected_id=selected_id,
+            rows=rows,
+        )
+
     @app.post("/action")
     def action():
         if not session.get("authenticated"):
@@ -289,9 +615,48 @@ def create_app() -> Flask:
 
         if status == "Pendiente" and action_type != "skip":
             log_click(action=action_type or "action", username=username, result="blocked:pendiente")
-            return redirect(url_for("review", error="Selecciona un estado final para continuar."))
+            session["_error"] = "Selecciona un estado final para continuar."
+            return redirect(url_for("review"))
 
-        record_id = state.current_record().get("IdCorreo", "")
+        if action_type in {"save", "skip"}:
+            lock = session.get("_lock") or {}
+            pk = str(lock.get("pk", "") or "")
+            rk = str(lock.get("rk", "") or "")
+            token = str(lock.get("token", "") or "")
+            if not pk or not rk or not token:
+                log_click(action=action_type, username=username, result="blocked:missing_lock")
+                session["_error"] = "Sesion caducada. Pulsa refrescar para cargar otro registro."
+                return redirect(url_for("review"))
+
+            key = EntradaKey(partition_key=pk, row_key=rk)
+            if not validate_lock(key, owner=username, token=token):
+                record_id = ""
+                try:
+                    rec = entrada_get_record(key)
+                    record_id = rec.get("IdCorreo", "") or ""
+                except Exception:
+                    record_id = ""
+                log_click(
+                    action=action_type,
+                    username=username,
+                    record_id=record_id,
+                    result="blocked:lock_expired_or_taken",
+                    extra={"status": status, "elapsed_seconds": elapsed_seconds},
+                )
+                session.pop("_lock", None)
+                try:
+                    state.abandon_current()
+                except Exception:
+                    pass
+                session["_error"] = "Sesion caducada (10 min) o registro ya procesado por otro usuario."
+                return redirect(url_for("review"))
+
+        record_id = ""
+        if action_type in {"save", "skip"}:
+            try:
+                record_id = entrada_get_record(EntradaKey(partition_key=pk, row_key=rk)).get("IdCorreo", "") or ""
+            except Exception:
+                record_id = ""
 
         if action_type == "save":
             if status == "KO MYM" and not ko_mym_reason.strip():
@@ -302,8 +667,9 @@ def create_app() -> Flask:
                     result="blocked:missing_ko_mym_reason",
                     extra={"status": status, "elapsed_seconds": elapsed_seconds},
                 )
-                return redirect(url_for("review", error="Para KO MYM selecciona el detalle del KO."))
-            if (status.startswith("KO") or status == "DUDA") and not reviewer_note.strip():
+                session["_error"] = "Para KO MYM selecciona el detalle del KO."
+                return redirect(url_for("review"))
+            if (status.startswith("KO") or status in {"DUDA", "FDS"}) and not reviewer_note.strip():
                 log_click(
                     action="save",
                     username=username,
@@ -311,20 +677,24 @@ def create_app() -> Flask:
                     result="blocked:missing_comment",
                     extra={"status": status, "elapsed_seconds": elapsed_seconds},
                 )
-                return redirect(
-                    url_for(
-                        "review",
-                        error="Para un KO o DUDA es obligatorio indicar un comentario de revisión.",
-                    )
-                )
+                session["_error"] = "Para un KO, DUDA o FDS es obligatorio indicar un comentario de revision."
+                return redirect(url_for("review"))
 
-            state.submit_current(
+            key = EntradaKey(partition_key=pk, row_key=rk)
+            record = entrada_get_record(key)
+            multitematica = (request.form.get("multitematica") or "").strip() in {"1", "on", "true", "True"}
+            write_resultado(
                 username=username,
+                record=record,
                 status=status,
+                ko_mym_reason=ko_mym_reason,
                 reviewer_note=reviewer_note,
                 internal_note=internal_note,
-                ko_mym_reason=ko_mym_reason,
+                multitematica=multitematica,
             )
+            entrada_delete_record(key)
+            session.pop("_lock", None)
+            reset_state()
             log_click(
                 action="save",
                 username=username,
@@ -335,7 +705,12 @@ def create_app() -> Flask:
             return redirect(url_for("review"))
 
         if action_type == "skip":
-            state.skip_current(username=username)
+            key = EntradaKey(partition_key=pk, row_key=rk)
+            record = entrada_get_record(key)
+            write_descarte(username=username, record=record)
+            entrada_delete_record(key)
+            session.pop("_lock", None)
+            reset_state()
             log_click(
                 action="skip",
                 username=username,
@@ -346,7 +721,30 @@ def create_app() -> Flask:
             return redirect(url_for("review"))
 
         log_click(action="action", username=username, record_id=record_id, result="fail:unknown_action")
-        return redirect(url_for("review", error="Acción no válida."))
+        session["_error"] = "Accion no valida."
+        return redirect(url_for("review"))
+
+    @app.post("/heartbeat")
+    def heartbeat():
+        if not session.get("authenticated"):
+            return ("", 401)
+        username = session.get("user", "")
+        lock = session.get("_lock") or {}
+        pk = str(lock.get("pk", "") or "")
+        rk = str(lock.get("rk", "") or "")
+        token = str(lock.get("token", "") or "")
+        if not pk or not rk or not token:
+            return ("", 204)
+
+        new_until = refresh_lock(EntradaKey(partition_key=pk, row_key=rk), owner=username, token=token)
+        if not new_until:
+            session.pop("_lock", None)
+            session.pop("_lock_until_ms", None)
+            return ("", 409)
+
+        lock_until_ms = int(new_until.timestamp() * 1000)
+        session["_lock_until_ms"] = lock_until_ms
+        return jsonify({"lock_until_ms": lock_until_ms})
 
     return app
 

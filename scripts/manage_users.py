@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mymail.tables import create_user
+from mymail.tables import ROLE_ADMIN, ROLE_REVISOR, create_user, list_users, set_user_role
 
 
 def main(argv: list[str]) -> int:
@@ -18,12 +18,35 @@ def main(argv: list[str]) -> int:
     add = sub.add_parser("add", help="Crear/actualizar usuario")
     add.add_argument("--username", required=True)
     add.add_argument("--password", required=True)
+    add.add_argument("--role", default=ROLE_REVISOR, choices=[ROLE_REVISOR, ROLE_ADMIN])
+
+    setrole = sub.add_parser("set-role", help="Cambiar rol a un usuario")
+    setrole.add_argument("--username", required=True)
+    setrole.add_argument("--role", required=True, choices=[ROLE_REVISOR, ROLE_ADMIN])
+
+    sub.add_parser("list", help="Listar usuarios")
 
     args = parser.parse_args(argv)
 
     if args.cmd == "add":
-        create_user(username=args.username, password=args.password)
-        print(f"OK: usuario '{args.username}' creado/actualizado")
+        create_user(username=args.username, password=args.password, role=args.role)
+        role = ROLE_ADMIN if args.username.lower() == "admin" else args.role
+        print(f"OK: usuario '{args.username}' creado/actualizado (rol={role})")
+        return 0
+
+    if args.cmd == "set-role":
+        set_user_role(username=args.username, role=args.role)
+        role = ROLE_ADMIN if args.username.lower() == "admin" else args.role
+        print(f"OK: rol de '{args.username}' actualizado a {role}")
+        return 0
+
+    if args.cmd == "list":
+        users = list_users()
+        if not users:
+            print("No hay usuarios o no se pudo leer la tabla.")
+            return 0
+        for u in users:
+            print(f"{u.get('username','')}\t{u.get('role','')}\tactive={u.get('active','')}")
         return 0
 
     parser.error("Comando no soportado")
