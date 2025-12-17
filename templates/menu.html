@@ -1,34 +1,82 @@
 {% extends "base.html" %}
 {% block body %}
-  <main class="page-center menu-wrap">
-    <div class="card menu-card">
-      <div class="menu-head">
-        <div class="menu-brand">
-          <img class="menu-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
-          <div>
-            <div class="menu-title">Revisor de Mayordomo Mail</div>
-            <div class="menu-sub">v{{ app_version }} · {{ current_user }}</div>
-          </div>
-        </div>
-        <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
+  <div class="menu-wrap">
+    <header class="topbar">
+      <div class="topbar-left">
+        <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+        <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
       </div>
-
-      <div class="menu-grid">
-        <a class="menu-tile menu-tile--primary" href="{{ url_for('review') }}">
-          <div class="menu-tile-k">Revisión</div>
-          <div class="menu-tile-v">Continuar revisando correos</div>
+      <div class="topbar-fields">
+        <div class="topbar-field"><span>Vista</span><strong>Menú</strong></div>
+      </div>
+      <div class="topbar-right">
+        <div class="pill">{{ current_user }}</div>
+        <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </a>
-        {% if can_stats %}
-          <a class="menu-tile" href="{{ url_for('stats') }}">
-            <div class="menu-tile-k">Estadísticas</div>
-            <div class="menu-tile-v">Indicadores y actividad</div>
-          </a>
-          <a class="menu-tile" href="{{ url_for('stats_listado') }}">
-            <div class="menu-tile-k">Listado</div>
-            <div class="menu-tile-v">Histórico de revisiones</div>
-          </a>
-        {% endif %}
       </div>
-    </div>
-  </main>
+    </header>
+
+    <main class="page menu-page">
+      <div class="card menu-card">
+        <div class="menu-grid">
+          <a class="menu-tile menu-tile--review" href="{{ url_for('review') }}">
+            <div class="menu-tile-top">
+              <div class="menu-tile-icon" aria-hidden="true">
+                <svg class="icon" viewBox="0 0 24 24">
+                  <path d="M9 11l3 3L22 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </div>
+              <div class="menu-tile-k">Revisión</div>
+            </div>
+            <div class="menu-tile-v">Continuar revisando correos</div>
+          </a>
+          {% if can_stats %}
+            <a class="menu-tile menu-tile--stats" href="{{ url_for('stats') }}">
+              <div class="menu-tile-top">
+                <div class="menu-tile-icon" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M4 19V5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M4 19h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M8 15v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M12 15V9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M16 15v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="menu-tile-k">Estadísticas</div>
+              </div>
+              <div class="menu-tile-v">Indicadores y actividad</div>
+            </a>
+            <a class="menu-tile menu-tile--listado" href="{{ url_for('stats_listado') }}">
+              <div class="menu-tile-top">
+                <div class="menu-tile-icon" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M8 6h13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M8 12h13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M8 18h13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M3 6h.01M3 12h.01M3 18h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="menu-tile-k">Listado</div>
+              </div>
+              <div class="menu-tile-v">Histórico de revisiones</div>
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </main>
+  </div>
 {% endblock %}
+

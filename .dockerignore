@@ -14,3 +14,4 @@ Validados_V3.xlsx
 *.xlsx
 revisiones.csv
 descartes.csv
+!.env

@@ -5,6 +5,7 @@ import os
 import re
 import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 from io import BytesIO, StringIO
 from datetime import datetime, timedelta, timezone
@@ -65,19 +66,28 @@ def create_app() -> Flask:
         return parse(current) >= parse(minimum)
 
     def azure_openai_responses(messages: list[dict], *, temperature: float = 0.2, max_output_tokens: int = 350) -> str:
-        endpoint = (getattr(config, "AZURE_OPENAI_ENDPOINT", "") or "").strip().rstrip("/")
+        endpoint_raw = (getattr(config, "AZURE_OPENAI_ENDPOINT", "") or "").strip()
         api_key = (getattr(config, "AZURE_OPENAI_API_KEY", "") or "").strip()
         deployment = (getattr(config, "AZURE_OPENAI_DEPLOYMENT", "") or "").strip()
-        if not endpoint or not api_key or not deployment:
+        api_version = (getattr(config, "AZURE_OPENAI_API_VERSION", "") or "").strip() or "2024-02-15-preview"
+        if not endpoint_raw or not api_key or not deployment:
             raise RuntimeError("Faltan credenciales de Azure OpenAI (endpoint/api_key/deployment) en config.py o entorno.")
 
-        url = f"{endpoint}/openai/v1/responses"
+        endpoint = endpoint_raw.rstrip("/")
+        for suffix in ("/openai/v1/responses", "/openai/v1/responses/", "/openai/v1", "/openai", "/openai/v1/"):
+            if endpoint.lower().endswith(suffix):
+                endpoint = endpoint[: -len(suffix)].rstrip("/")
+
+        q = urllib.parse.urlencode({"api-version": api_version})
+        url = f"{endpoint}/openai/deployments/{urllib.parse.quote(deployment)}/chat/completions?{q}"
         payload = {
-            "model": deployment,
-            "input": messages,
-            "temperature": float(temperature),
-            "max_output_tokens": int(max_output_tokens),
+            "messages": messages,
+            "max_completion_tokens": int(max_output_tokens),
         }
+        if (deployment or "").strip().lower().startswith("gpt-5"):
+            payload["reasoning_effort"] = "minimal"
+        if float(temperature) == 1.0:
+            payload["temperature"] = 1.0
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             url,
@@ -99,22 +109,11 @@ def create_app() -> Flask:
 
         try:
             obj = json.loads(body)
-            output = obj.get("output") or []
-            if isinstance(output, list) and output:
-                parts = []
-                for item in output:
-                    content = (item or {}).get("content") or []
-                    for c in content:
-                        if (c or {}).get("type") == "output_text":
-                            txt = str((c or {}).get("text") or "")
-                            if txt:
-                                parts.append(txt)
-                text = "\n".join(parts).strip()
-                if text:
-                    return text
-            text = str(obj.get("output_text") or "").strip()
-            if text:
-                return text
+            choices = obj.get("choices") or []
+            if isinstance(choices, list) and choices:
+                content = (((choices[0] or {}).get("message") or {}).get("content") or "").strip()
+                if content:
+                    return str(content)
             raise RuntimeError("Respuesta vacía de Azure OpenAI.")
         except Exception as exc:
             raise RuntimeError(f"Respuesta inválida de Azure OpenAI: {body[:500]}") from exc
@@ -351,7 +350,7 @@ def create_app() -> Flask:
             pending=state.pending_count(),
             current_user=session.get("user", ""),
             can_stats=(session.get("role") or "") == ROLE_ADMIN,
-            can_ai=version_at_least(app_version, "1.0.0"),
+            can_ai=version_at_least(app_version, "1.0.0") and (session.get("role") or "") == ROLE_ADMIN,
             app_version=app_version,
             title="Revisor de Mayordomo Mail",
             error=error,
@@ -364,6 +363,9 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "No autenticado."}), 401
         if not version_at_least(app_version, "1.0.0"):
             return jsonify({"ok": False, "error": "Funcionalidad no disponible para esta versión."}), 404
+
+        if (session.get("role") or "") != ROLE_ADMIN:
+            return jsonify({"ok": False, "error": "No autorizado: solo Administrador."}), 403
 
         state = get_state()
         username = session.get("user", "")

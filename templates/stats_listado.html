@@ -9,10 +9,23 @@
       <div class="topbar-field"><span>Vista</span><strong>Listado</strong></div>
     </div>
     <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estadísticas</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Continuar revisando</a>
       <div class="pill">{{ current_user }}</div>
-      <a class="btn btn-ghost" href="{{ url_for('stats') }}">Estadísticas</a>
-      <a class="btn btn-ghost" href="{{ url_for('review') }}">Continuar revisando</a>
-      <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
     </div>
   </header>
 
@@ -50,11 +63,11 @@
 
         <div class="actions" style="align-items:flex-end">
           <button class="btn btn-primary" type="submit">Aplicar</button>
-          <details>
+          <details class="dropdown">
             <summary class="btn btn-ghost">Descargar</summary>
-            <div class="kv-list" style="margin-top:8px">
-              <a class="btn btn-ghost" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='csv') }}">CSV</a>
-              <a class="btn btn-ghost" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='xlsx') }}">Excel</a>
+            <div class="dropdown-menu">
+              <a class="dropdown-item" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='csv') }}">CSV</a>
+              <a class="dropdown-item" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='xlsx') }}">Excel</a>
             </div>
           </details>
         </div>
@@ -62,30 +75,6 @@
 
       <div class="actions" style="justify-content:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap">
         <div class="pill">Total: {{ total }}</div>
-        <div class="field" style="min-width:140px">
-          <span>Filas</span>
-          <form method="get" class="actions" style="gap:6px">
-            <input type="hidden" name="revisor" value="{{ selected_user or '' }}" />
-            <input type="hidden" name="estado" value="{{ selected_status or '' }}" />
-            <input type="hidden" name="idcorreo" value="{{ selected_id or '' }}" />
-            <select name="per_page" onchange="this.form.submit()">
-              {% for opt in [10,25,50] %}
-                <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option>
-              {% endfor %}
-            </select>
-          </form>
-        </div>
-        <div class="actions" style="gap:6px; flex-wrap:wrap">
-          {% if page > 1 %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">«</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">‹</a>
-          {% endif %}
-          <div class="pill">Página {{ page }} / {{ total_pages }}</div>
-          {% if page < total_pages %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">›</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">»</a>
-          {% endif %}
-        </div>
       </div>
 
       <div style="overflow:auto; margin-top:10px">
@@ -115,7 +104,8 @@
                     <div class="tbl-detail">
                       <div class="section section--review section--compact" style="margin:0; padding:12px">
                         <div class="section-title" style="margin-bottom:10px">Revisión EY</div>
-                        <div class="grid-4">
+                        <div class="grid-5">
+                          <div class="kv kv-vert"><div class="k">Estado</div><div class="v">{{ r.get("status","") }}</div></div>
                           <div class="kv kv-vert"><div class="k">Detalle KO MTM</div><div class="v">{{ r.get("ko_mym_reason","") }}</div></div>
                           <div class="kv kv-vert"><div class="k">Comentario de revisión</div><div class="v">{{ r.get("reviewer_note","") }}</div></div>
                           <div class="kv kv-vert"><div class="k">Nota interna</div><div class="v">{{ r.get("_internal_note_text","") }}</div></div>
@@ -187,6 +177,33 @@
             {% endif %}
           </tbody>
         </table>
+      </div>
+
+      <div class="list-footer">
+        <div class="list-footer-left">
+          {% if page > 1 %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
+          {% endif %}
+          {% if page < total_pages %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
+          {% endif %}
+        </div>
+        <div class="list-footer-right">
+          <div class="pill pill-sm">Página {{ page }} / {{ total_pages }}</div>
+          <form method="get" class="list-footer-form">
+            <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="revisor" value="{{ selected_user or '' }}" />
+            <input type="hidden" name="estado" value="{{ selected_status or '' }}" />
+            <input type="hidden" name="idcorreo" value="{{ selected_id or '' }}" />
+            <select name="per_page" class="select-compact" onchange="this.form.submit()" aria-label="Filas por página">
+              {% for opt in [10,25,50] %}
+                <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </div>
       </div>
     </section>
   </main>

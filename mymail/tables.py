@@ -106,6 +106,22 @@ def set_user_role(username: str, role: str) -> None:
     client.upsert_entity(mode="merge", entity=entity)
 
 
+def set_user_password(username: str, password: str) -> None:
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("username vacío")
+    if not password:
+        raise ValueError("password vacío")
+
+    client = _table(config.TABLE_USERS)
+    entity = {
+        "PartitionKey": "users",
+        "RowKey": username,
+        "password_hash": generate_password_hash(password),
+    }
+    client.upsert_entity(mode="merge", entity=entity)
+
+
 def list_users() -> list[dict[str, str]]:
     client = _table(config.TABLE_USERS)
     out: list[dict[str, str]] = []

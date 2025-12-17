@@ -17,12 +17,25 @@
     </div>
     <div class="topbar-right">
       <div class="pill">Pendientes: {{ pending }}</div>
-      <div class="pill">{{ current_user }}</div>
       {% if can_stats %}
-        <a class="btn btn-ghost" href="{{ url_for('stats_listado') }}">Listado</a>
-        <a class="btn btn-ghost" href="{{ url_for('stats') }}">Estadísticas</a>
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_listado') }}">Listado</a>
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estadísticas</a>
       {% endif %}
-      <a class="btn btn-logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
+      <div class="pill">{{ current_user }}</div>
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
     </div>
   </header>
 
