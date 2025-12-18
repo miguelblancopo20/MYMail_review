@@ -285,6 +285,8 @@ def create_app() -> Flask:
         lock_until_ms = session.get("_lock_until_ms")
         try:
             record = state.current_record(owner=username)
+        except TimeoutError as exc:
+            return render_template("done.html", message=str(exc))
         except Exception as exc:
             return render_template("done.html", message=f"Error cargando un registro desde CosmosDB: {exc}")
         if not record:
@@ -395,7 +397,10 @@ def create_app() -> Flask:
 
         state = get_state()
         username = session.get("user", "")
-        record = state.current_record(owner=username)
+        try:
+            record = state.current_record(owner=username)
+        except TimeoutError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 409
         if not record:
             return jsonify({"ok": False, "error": "No hay correo activo para analizar."}), 409
 

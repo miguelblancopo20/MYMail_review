@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import secrets
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
-
-from flask import session
 
 from mymail.entrada import (
     LOCK_TTL_SECONDS,
@@ -20,7 +19,6 @@ from mymail.entrada import (
     release_lock,
 )
 from mymail.entrada import try_acquire_lock, validate_lock
-from mymail.tables import write_descarte, write_resultado
 
 _LOCK = threading.Lock()
 _WRITE_LOCK = threading.Lock()
@@ -28,6 +26,11 @@ _STATES: Dict[str, "ReviewState"] = {}
 
 
 def _session_id() -> str:
+    try:
+        from flask import session
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("Flask no está instalado: no se puede usar sesión para estado de revisión.") from exc
+
     sid = session.get("_sid")
     if not sid:
         sid = secrets.token_urlsafe(16)
@@ -36,6 +39,11 @@ def _session_id() -> str:
 
 
 def reset_state() -> None:
+    try:
+        from flask import session
+    except Exception:  # pragma: no cover
+        return
+
     sid = session.get("_sid")
     if not sid:
         return
@@ -46,6 +54,11 @@ def reset_state() -> None:
 
 
 def get_state() -> "ReviewState":
+    try:
+        from flask import session
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("Flask no está instalado: no se puede usar sesión para estado de revisión.") from exc
+
     sid = _session_id()
     with _LOCK:
         state = _STATES.get(sid)
@@ -170,14 +183,15 @@ class ReviewState:
 
     def current_record(self, *, owner: str) -> Dict[str, str]:
         owner = (owner or "").strip()
-        start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-        attempts = 0
+        start_s = time.monotonic()
+        consecutive_lock_failures = 0
+        last_refresh_s = 0.0
         while True:
-            attempts += 1
-            if attempts > 250:
-                raise RuntimeError("No se pudo seleccionar un correo (demasiados intentos adquiriendo lock).")
-            if int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms > 25_000:
-                raise TimeoutError("Timeout seleccionando un correo pendiente en CosmosDB (25s).")
+            elapsed_s = time.monotonic() - start_s
+            if elapsed_s > 25.0:
+                raise TimeoutError(
+                    "No hay correos disponibles ahora mismo (todos bloqueados). Espera unos segundos y reintenta."
+                )
             if not self.current_key:
                 self.current_key = self._next_key()
                 self.current = {}
@@ -197,10 +211,26 @@ class ReviewState:
             if not self.lock_token:
                 acquired = try_acquire_lock(self.current_key, owner=owner, ttl_seconds=LOCK_TTL_SECONDS)
                 if not acquired:
+                    consecutive_lock_failures += 1
                     self.current_key = None
                     self.current = {}
                     self.lock_token = ""
+                    # Evita bucle apretado y reduce contención/consumo en Cosmos.
+                    # Cada cierto tiempo, refresca la cola para detectar locks liberados/expirados.
+                    now_s = time.monotonic()
+                    if consecutive_lock_failures >= 25 and (now_s - last_refresh_s) >= 5.0:
+                        last_refresh_s = now_s
+                        try:
+                            clear_expired_locks()
+                        except Exception:
+                            pass
+                        try:
+                            self.ensure_loaded(force=True)
+                        except Exception:
+                            pass
+                    time.sleep(min(0.5, 0.05 + (consecutive_lock_failures * 0.002)))
                     continue
+                consecutive_lock_failures = 0
                 self.lock_token, _ = acquired
 
             if not self.current:
@@ -255,6 +285,8 @@ class ReviewState:
         record = self.current_record(owner=username)
         if not record:
             return
+        from mymail.tables import write_descarte
+
         write_descarte(username=username, record=record)
         self._drop_current()
 
@@ -271,6 +303,8 @@ class ReviewState:
         record = self.current_record(owner=username)
         if not record:
             return
+        from mymail.tables import write_resultado
+
         write_resultado(
             username=username,
             record=record,

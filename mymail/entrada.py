@@ -60,6 +60,32 @@ def _lock_until(now: datetime, ttl_seconds: int) -> datetime:
     return now + timedelta(seconds=ttl)
 
 
+def _status_code(exc: Exception) -> int | None:
+    code = getattr(exc, "status_code", None)
+    try:
+        return int(code) if code is not None else None
+    except Exception:
+        return None
+
+
+def _raise_if_auth_error(exc: Exception, *, action: str) -> None:
+    status_code = _status_code(exc)
+    if status_code in {401, 403}:
+        raise RuntimeError(
+            f"CosmosDB: permisos insuficientes para {action} en contenedor 'entrada' (HTTP {status_code}). "
+            "Revisa `COSMOS_KEY` (no usar key read-only / token sin permisos de escritura)."
+        ) from exc
+
+
+def _if_not_modified():
+    try:
+        from azure.core import MatchConditions
+
+        return MatchConditions.IfNotModified
+    except Exception:
+        return None
+
+
 def list_keys(partition_key: str = DEFAULT_PARTITION) -> List[EntradaKey]:
     c = _container()
     out: List[EntradaKey] = []
@@ -190,7 +216,8 @@ def try_acquire_lock(key: EntradaKey, *, owner: str, ttl_seconds: int = LOCK_TTL
     now = _utcnow()
     try:
         ent = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
-    except Exception:
+    except Exception as exc:
+        _raise_if_auth_error(exc, action="leer el item (adquirir lock)")
         return None
 
     current_owner = str(ent.get("lock_owner", "") or "")
@@ -206,39 +233,48 @@ def try_acquire_lock(key: EntradaKey, *, owner: str, ttl_seconds: int = LOCK_TTL
     until_dt = _lock_until(now, ttl_seconds)
     ent["lock_until"] = until_dt.isoformat()
 
-    try:
-        from azure.core import MatchConditions
+    etag = str(ent.get("_etag", "") or "").strip()
+    match_cond = _if_not_modified()
 
-        etag = str(ent.get("_etag", "") or "").strip()
-        if etag:
-            try:
-                _with_timeout(
-                    lambda: c.replace_item(
-                        item=key.row_key,
-                        body=ent,
-                        partition_key=key.partition_key,
-                        etag=etag,
-                        match_condition=MatchConditions.IfNotModified,
-                    ),
-                    timeout_s=20.0,
-                )
-            except Exception:
-                # Fallback: re-lee y reintenta sin condición si sigue libre (evita "0 pendientes" por etag/condición).
-                ent2 = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
-                current_owner2 = str(ent2.get("lock_owner", "") or "")
-                until2 = _parse_dt(str(ent2.get("lock_until", "") or ""))
-                is_free2 = (not current_owner2) or (until2 is None) or (until2 <= now)
-                if not is_free2:
-                    return None
-                ent2["lock_owner"] = owner
-                ent2["lock_token"] = token
-                ent2["lock_acquired_at"] = now.isoformat()
-                ent2["lock_until"] = until_dt.isoformat()
-                _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent2, partition_key=key.partition_key), timeout_s=20.0)
-        else:
-            _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent, partition_key=key.partition_key), timeout_s=20.0)
-    except Exception:
-        return None
+    def _replace(body):
+        if etag and match_cond is not None:
+            return c.replace_item(
+                item=key.row_key,
+                body=body,
+                etag=etag,
+                match_condition=match_cond,
+            )
+        return c.replace_item(item=key.row_key, body=body)
+
+    try:
+        _with_timeout(lambda: _replace(ent), timeout_s=20.0)
+    except Exception as exc:
+        _raise_if_auth_error(exc, action="escribir el lock")
+        # Conflictos típicos por ETag / carrera: se interpreta como "no se pudo adquirir".
+        if _status_code(exc) in {409, 412}:
+            return None
+        # Fallback: re-lee y reintenta sin condición si sigue libre.
+        try:
+            ent2 = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
+        except Exception as exc2:
+            _raise_if_auth_error(exc2, action="releer el item (fallback lock)")
+            raise RuntimeError(f"CosmosDB: error releyendo item al adquirir lock: {exc2}") from exc2
+        current_owner2 = str(ent2.get("lock_owner", "") or "")
+        until2 = _parse_dt(str(ent2.get("lock_until", "") or ""))
+        is_free2 = (not current_owner2) or (until2 is None) or (until2 <= now)
+        if not is_free2:
+            return None
+        ent2["lock_owner"] = owner
+        ent2["lock_token"] = token
+        ent2["lock_acquired_at"] = now.isoformat()
+        ent2["lock_until"] = until_dt.isoformat()
+        try:
+            _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent2), timeout_s=20.0)
+        except Exception as exc2:
+            _raise_if_auth_error(exc2, action="escribir el lock (fallback)")
+            if _status_code(exc2) in {409, 412}:
+                return None
+            raise RuntimeError(f"CosmosDB: error escribiendo lock (fallback): {exc2}") from exc2
 
     return token, until_dt
 
@@ -253,7 +289,8 @@ def validate_lock(key: EntradaKey, *, owner: str, token: str) -> bool:
     now = _utcnow()
     try:
         ent = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
-    except Exception:
+    except Exception as exc:
+        _raise_if_auth_error(exc, action="leer el item (validar lock)")
         return False
 
     if str(ent.get("lock_owner", "") or "") != owner:
@@ -274,7 +311,8 @@ def refresh_lock(key: EntradaKey, *, owner: str, token: str, ttl_seconds: int = 
     now = _utcnow()
     try:
         ent = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
-    except Exception:
+    except Exception as exc:
+        _raise_if_auth_error(exc, action="leer el item (refrescar lock)")
         return None
 
     if str(ent.get("lock_owner", "") or "") != owner:
@@ -288,37 +326,43 @@ def refresh_lock(key: EntradaKey, *, owner: str, token: str, ttl_seconds: int = 
     new_until = _lock_until(now, ttl_seconds)
     ent["lock_until"] = new_until.isoformat()
 
-    try:
-        from azure.core import MatchConditions
+    etag = str(ent.get("_etag", "") or "").strip()
+    match_cond = _if_not_modified()
 
-        etag = str(ent.get("_etag", "") or "").strip()
-        if etag:
-            try:
-                _with_timeout(
-                    lambda: c.replace_item(
-                        item=key.row_key,
-                        body=ent,
-                        partition_key=key.partition_key,
-                        etag=etag,
-                        match_condition=MatchConditions.IfNotModified,
-                    ),
-                    timeout_s=20.0,
-                )
-            except Exception:
-                ent2 = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
-                if str(ent2.get("lock_owner", "") or "") != owner:
-                    return None
-                if str(ent2.get("lock_token", "") or "") != token:
-                    return None
-                until2 = _parse_dt(str(ent2.get("lock_until", "") or ""))
-                if until2 is None or until2 <= now:
-                    return None
-                ent2["lock_until"] = new_until.isoformat()
-                _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent2, partition_key=key.partition_key), timeout_s=20.0)
-        else:
-            _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent, partition_key=key.partition_key), timeout_s=20.0)
-    except Exception:
-        return None
+    def _replace(body):
+        if etag and match_cond is not None:
+            return c.replace_item(
+                item=key.row_key,
+                body=body,
+                etag=etag,
+                match_condition=match_cond,
+            )
+        return c.replace_item(item=key.row_key, body=body)
+
+    try:
+        _with_timeout(lambda: _replace(ent), timeout_s=20.0)
+    except Exception as exc:
+        _raise_if_auth_error(exc, action="escribir el lock (refresh)")
+        if _status_code(exc) in {409, 412}:
+            return None
+        try:
+            ent2 = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
+        except Exception as exc2:
+            _raise_if_auth_error(exc2, action="releer el item (fallback refresh lock)")
+            return None
+        if str(ent2.get("lock_owner", "") or "") != owner:
+            return None
+        if str(ent2.get("lock_token", "") or "") != token:
+            return None
+        until2 = _parse_dt(str(ent2.get("lock_until", "") or ""))
+        if until2 is None or until2 <= now:
+            return None
+        ent2["lock_until"] = new_until.isoformat()
+        try:
+            _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent2), timeout_s=20.0)
+        except Exception as exc2:
+            _raise_if_auth_error(exc2, action="escribir el lock (fallback refresh)")
+            return None
 
     return new_until
 
@@ -332,7 +376,8 @@ def release_lock(key: EntradaKey, *, owner: str, token: str) -> bool:
     c = _container()
     try:
         ent = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
-    except Exception:
+    except Exception as exc:
+        _raise_if_auth_error(exc, action="leer el item (liberar lock)")
         return False
 
     if str(ent.get("lock_owner", "") or "") != owner:
@@ -345,37 +390,43 @@ def release_lock(key: EntradaKey, *, owner: str, token: str) -> bool:
     ent["lock_until"] = ""
     ent["lock_acquired_at"] = ""
 
-    try:
-        from azure.core import MatchConditions
+    etag = str(ent.get("_etag", "") or "").strip()
+    match_cond = _if_not_modified()
 
-        etag = str(ent.get("_etag", "") or "").strip()
-        if etag:
-            try:
-                _with_timeout(
-                    lambda: c.replace_item(
-                        item=key.row_key,
-                        body=ent,
-                        partition_key=key.partition_key,
-                        etag=etag,
-                        match_condition=MatchConditions.IfNotModified,
-                    ),
-                    timeout_s=20.0,
-                )
-            except Exception:
-                ent2 = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
-                if str(ent2.get("lock_owner", "") or "") != owner:
-                    return False
-                if str(ent2.get("lock_token", "") or "") != token:
-                    return False
-                ent2["lock_owner"] = ""
-                ent2["lock_token"] = ""
-                ent2["lock_until"] = ""
-                ent2["lock_acquired_at"] = ""
-                _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent2, partition_key=key.partition_key), timeout_s=20.0)
-        else:
-            _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent, partition_key=key.partition_key), timeout_s=20.0)
-    except Exception:
-        return False
+    def _replace(body):
+        if etag and match_cond is not None:
+            return c.replace_item(
+                item=key.row_key,
+                body=body,
+                etag=etag,
+                match_condition=match_cond,
+            )
+        return c.replace_item(item=key.row_key, body=body)
+
+    try:
+        _with_timeout(lambda: _replace(ent), timeout_s=20.0)
+    except Exception as exc:
+        _raise_if_auth_error(exc, action="escribir el unlock")
+        if _status_code(exc) in {409, 412}:
+            return False
+        try:
+            ent2 = _with_timeout(lambda: c.read_item(item=key.row_key, partition_key=key.partition_key), timeout_s=20.0)
+        except Exception as exc2:
+            _raise_if_auth_error(exc2, action="releer el item (fallback unlock)")
+            return False
+        if str(ent2.get("lock_owner", "") or "") != owner:
+            return False
+        if str(ent2.get("lock_token", "") or "") != token:
+            return False
+        ent2["lock_owner"] = ""
+        ent2["lock_token"] = ""
+        ent2["lock_until"] = ""
+        ent2["lock_acquired_at"] = ""
+        try:
+            _with_timeout(lambda: c.replace_item(item=key.row_key, body=ent2), timeout_s=20.0)
+        except Exception as exc2:
+            _raise_if_auth_error(exc2, action="escribir el unlock (fallback)")
+            return False
     return True
 
 
@@ -406,20 +457,18 @@ def clear_expired_locks(partition_key: str = DEFAULT_PARTITION) -> int:
         ent["lock_until"] = ""
         ent["lock_acquired_at"] = ""
         try:
-            from azure.core import MatchConditions
-
             item_id = str(ent.get("id", "") or "")
             pk = str(ent.get("pk", "") or str(partition_key))
             etag = str(ent.get("_etag", "") or "").strip()
-            if etag:
+            match_cond = _if_not_modified()
+            if etag and match_cond is not None:
                 try:
                     _with_timeout(
                         lambda: c.replace_item(
                             item=item_id,
                             body=ent,
-                            partition_key=pk,
                             etag=etag,
-                            match_condition=MatchConditions.IfNotModified,
+                            match_condition=match_cond,
                         ),
                         timeout_s=20.0,
                     )
@@ -432,9 +481,9 @@ def clear_expired_locks(partition_key: str = DEFAULT_PARTITION) -> int:
                     ent2["lock_token"] = ""
                     ent2["lock_until"] = ""
                     ent2["lock_acquired_at"] = ""
-                    _with_timeout(lambda: c.replace_item(item=item_id, body=ent2, partition_key=pk), timeout_s=20.0)
+                    _with_timeout(lambda: c.replace_item(item=item_id, body=ent2), timeout_s=20.0)
             else:
-                _with_timeout(lambda: c.replace_item(item=item_id, body=ent, partition_key=pk), timeout_s=20.0)
+                _with_timeout(lambda: c.replace_item(item=item_id, body=ent), timeout_s=20.0)
             cleared += 1
         except Exception:
             continue
