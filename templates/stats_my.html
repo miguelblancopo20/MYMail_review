@@ -114,9 +114,14 @@
         const run = async () => {
           try {
             ui?.showOverlay?.("Consultando pendientes...");
-            const r = await fetch(api, { headers: { "X-Requested-With": "fetch" } });
-            const j = await r.json();
-            if (!j?.ok) throw new Error(j?.error || "Error cargando estadísticas MY.");
+            const r = await fetch(api, { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" });
+            let j = null;
+            try {
+              j = await r.json();
+            } catch (err) {
+              throw new Error(`Error HTTP ${r.status || 0} cargando Estadísticas MY.`);
+            }
+            if (!r.ok || !j?.ok) throw new Error(j?.error || `Error HTTP ${r.status || 0} cargando Estadísticas MY.`);
             const d = j.data || {};
             setText("pillPendingTotal", `Pendientes: ${d.pending_total ?? 0}`);
             setText("pillPendingLoaded", `Cargados: ${d.pending_loaded ?? 0}`);
@@ -124,7 +129,11 @@
             fillList3("listPendingTopMatriculas", d.pending_top_matriculas || []);
             fillList3("listPendingMotivo", d.pending_ranking_motivo || []);
           } catch (e) {
-            ui?.showModal?.(String(e?.message || e || "Error cargando estadísticas MY."));
+            const raw = String(e?.message || e || "Error cargando Estadísticas MY.");
+            const friendly = /failed to fetch/i.test(raw)
+              ? "No se pudo cargar Estadísticas MY (timeout o conexión). Prueba a filtrar por semana y reintentar."
+              : raw;
+            ui?.showModal?.(friendly);
           } finally {
             ui?.hideOverlay?.();
           }

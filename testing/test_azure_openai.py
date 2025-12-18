@@ -35,7 +35,9 @@ def call_chat_completions(
     endpoint_raw = endpoint if endpoint is not None else (getattr(config, "AZURE_OPENAI_ENDPOINT", "") or "")
     api_key = getattr(config, "AZURE_OPENAI_API_KEY", "") or ""
     deployment = deployment if deployment is not None else (getattr(config, "AZURE_OPENAI_DEPLOYMENT", "") or "")
-    api_version = api_version if api_version is not None else (getattr(config, "AZURE_OPENAI_API_VERSION", "") or "2024-02-15-preview")
+    api_version = api_version if api_version is not None else (
+        getattr(config, "AZURE_OPENAI_API_VERSION", "") or "2024-02-15-preview"
+    )
 
     if not str(endpoint_raw).strip() or not str(api_key).strip() or not str(deployment).strip():
         raise RuntimeError("Faltan AZURE_OPENAI_ENDPOINT/AZURE_OPENAI_API_KEY/AZURE_OPENAI_DEPLOYMENT en .env/config.py")
@@ -115,3 +117,4 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+

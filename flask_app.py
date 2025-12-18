@@ -19,6 +19,7 @@ from mymail.entrada import EntradaKey, clear_expired_locks, refresh_lock, releas
 from mymail.entrada import get_record as entrada_get_record
 from mymail.entrada import delete_record as entrada_delete_record
 from mymail.entrada import list_pending_meta
+from mymail.entrada import list_pending_payloads_for_stats, record_from_payload
 from mymail.state import get_state, reset_state
 from mymail.revisiones_blob import get_revision, list_revisions, upload_revision
 from mymail.tables import ROLE_ADMIN, list_users, log_click, verify_user
@@ -504,13 +505,12 @@ def create_app() -> Flask:
 
         rows: list[dict] = []
         if requires_full:
-            for m in metas:
-                pk = str(m.get("pk", "") or "")
-                rk = str(m.get("rk", "") or "")
-                if not pk or not rk:
-                    continue
+            for ent in entities:
                 try:
-                    rec = entrada_get_record(EntradaKey(partition_key=pk, row_key=rk))
+                    rec = record_from_payload(
+                        record_json=str(ent.get("record_json", "") or ""),
+                        record_blob=str(ent.get("record_blob", "") or ""),
+                    )
                 except Exception:
                     continue
 
@@ -854,26 +854,25 @@ def create_app() -> Flask:
         pending_items_cache = _cache_get("pending_items:v1", ttl_seconds=60)
         if pending_items_cache is None:
             try:
-                metas = list_pending_meta(limit=5000)
+                entities = list_pending_payloads_for_stats(limit=5000)
             except Exception as exc:
                 return jsonify({"ok": False, "error": str(exc)}), 500
-            pending_total = len(metas)
+            pending_total = len(entities)
             pending_loaded = 0
             pending_items_all: list[dict] = []
-            for m in metas:
-                pk = str(m.get("pk", "") or "")
-                rk = str(m.get("rk", "") or "")
-                if not pk or not rk:
-                    continue
+            for ent in entities:
                 try:
-                    rec = entrada_get_record(EntradaKey(partition_key=pk, row_key=rk))
+                    rec = record_from_payload(
+                        record_json=str(ent.get("record_json", "") or ""),
+                        record_blob=str(ent.get("record_blob", "") or ""),
+                    )
                 except Exception:
                     continue
                 pending_loaded += 1
                 tematica = str(rec.get("Location", "") or "").strip() or "—"
                 motivo = str(rec.get("Motivo", "") or "").strip() or "—"
                 matricula = pending_matricula(rec).strip() or "—"
-                ts = str(rec.get("@timestamp", "") or "").strip()
+                ts = str(ent.get("timestamp", "") or "").strip() or str(rec.get("@timestamp", "") or "").strip()
                 pending_items_all.append({"tematica": tematica, "motivo": motivo, "matricula": matricula, "timestamp": ts})
             pending_items_cache = _cache_set(
                 "pending_items:v1",
