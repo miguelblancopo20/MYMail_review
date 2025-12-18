@@ -9,6 +9,8 @@
       <div class="topbar-field"><span>Vista</span><strong>Listado</strong></div>
     </div>
     <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estadísticas MY</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estadísticas</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Continuar revisando</a>
       <div class="pill">{{ current_user }}</div>
@@ -31,7 +33,7 @@
 
   <main class="page page--full">
     <section class="section section--review" style="margin-top:0">
-      <div class="section-title">Revisiones (Blob)</div>
+      <div class="section-title">Revisiones</div>
 
       <form method="get" class="actions" style="justify-content:flex-start; gap:12px; flex-wrap:wrap">
         <input type="hidden" name="page" value="1" />
@@ -66,8 +68,8 @@
           <details class="dropdown">
             <summary class="btn btn-ghost">Descargar</summary>
             <div class="dropdown-menu">
-              <a class="dropdown-item" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='csv') }}">CSV</a>
-              <a class="dropdown-item" href="{{ url_for('stats_listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='xlsx') }}">Excel</a>
+              <a class="dropdown-item" href="{{ url_for('listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='csv') }}">CSV</a>
+              <a class="dropdown-item" href="{{ url_for('listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='xlsx') }}">Excel</a>
             </div>
           </details>
         </div>
@@ -102,6 +104,9 @@
                   <details>
                     <summary>Ver</summary>
                     <div class="tbl-detail">
+                      <div class="actions" style="justify-content:flex-start; margin-bottom:8px">
+                        <a class="btn btn-secondary btn-sm" href="{{ url_for('listado_editar', blob=r.get('_blob_name',''), next=request.full_path if request else '') }}">Editar (admin)</a>
+                      </div>
                       <div class="section section--review section--compact" style="margin:0; padding:12px">
                         <div class="section-title" style="margin-bottom:10px">Revisión EY</div>
                         <div class="grid-5">
@@ -164,6 +169,20 @@
                       {% endif %}
 
                       <details style="margin-top:10px">
+                        <summary>History</summary>
+                        <div class="section" style="margin-top:8px; padding:12px">
+                          <div class="kv-list">
+                            {% for ts, u, summary in (r.get("_history_rows") or []) %}
+                              <div class="kv-row kv-row-3"><div class="k">{{ ts }}</div><div class="v">{{ u }}</div><div class="v">{{ summary }}</div></div>
+                            {% endfor %}
+                            {% if not (r.get("_history_rows") or []) %}
+                              <div class="kv-row"><div class="k">Sin cambios</div><div class="v">—</div></div>
+                            {% endif %}
+                          </div>
+                        </div>
+                      </details>
+
+                      <details style="margin-top:10px">
                         <summary>JSON completo</summary>
                         <pre style="margin-top:8px">{{ (r.get("_record_clean") or {}) | tojson(indent=2) }}</pre>
                       </details>
@@ -180,18 +199,26 @@
       </div>
 
       <div class="list-footer">
-        <div class="list-footer-left">
+        <div class="list-footer-left hidden">
           {% if page > 1 %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
           {% endif %}
           {% if page < total_pages %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('stats_listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
           {% endif %}
         </div>
         <div class="list-footer-right">
+          {% if page > 1 %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
+          {% endif %}
           <div class="pill pill-sm">Página {{ page }} / {{ total_pages }}</div>
+          {% if page < total_pages %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
+          {% endif %}
           <form method="get" class="list-footer-form">
             <input type="hidden" name="page" value="1" />
             <input type="hidden" name="revisor" value="{{ selected_user or '' }}" />

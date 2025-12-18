@@ -69,6 +69,7 @@ body{
  .topbar-field strong{font-size:13px;color:var(--text);font-weight:700}
  .topbar-idline{display:flex;align-items:center;gap:10px}
  .topbar-timer{font-size:12px;color:var(--muted);font-weight:900}
+ .topbar-timer--expired{color:#b91c1c}
 .topbar-right{display:flex;align-items:center;gap:10px}
 .topbar-control{display:flex;align-items:center;gap:10px}
 .topbar-inline{display:flex;align-items:center;gap:6px}
@@ -180,16 +181,16 @@ body{
 }
 .menu-tile--review{border-color:rgba(37,99,235,0.25);background:linear-gradient(180deg, rgba(37,99,235,0.12), #fff 70%)}
 .menu-tile--review:hover{background:linear-gradient(180deg, rgba(37,99,235,0.16), #fff 70%)}
-.menu-tile--stats{border-color:rgba(22,163,74,0.22);background:linear-gradient(180deg, rgba(22,163,74,0.10), #fff 70%)}
-.menu-tile--stats:hover{background:linear-gradient(180deg, rgba(22,163,74,0.14), #fff 70%)}
-.menu-tile--listado{border-color:rgba(147,51,234,0.22);background:linear-gradient(180deg, rgba(147,51,234,0.10), #fff 70%)}
-.menu-tile--listado:hover{background:linear-gradient(180deg, rgba(147,51,234,0.14), #fff 70%)}
+.menu-tile--stats{border-color:rgba(17,24,39,0.10);background:#f3f4f6}
+.menu-tile--stats:hover{background:#e5e7eb}
+.menu-tile--listado{border-color:rgba(17,24,39,0.10);background:#f3f4f6}
+.menu-tile--listado:hover{background:#e5e7eb}
 .menu-tile{border:1px solid var(--line);border-radius:16px;padding:14px 14px;background:#fff;text-decoration:none;color:var(--text);display:flex;flex-direction:column;gap:6px;min-height:92px}
 .menu-tile:hover{background:#f9fafb}
 .menu-tile-k{font-size:14px;font-weight:950;letter-spacing:-0.2px}
 .menu-tile-v{font-size:12px;color:var(--muted);font-weight:800}
-.menu-tile--primary{border-color:rgba(37,99,235,0.25);background:linear-gradient(180deg, rgba(37,99,235,0.10), #fff 70%)}
-.menu-tile--primary:hover{background:linear-gradient(180deg, rgba(37,99,235,0.14), #fff 70%)}
+.menu-tile--primary{border-color:rgba(17,24,39,0.10);background:#f3f4f6}
+.menu-tile--primary:hover{background:#e5e7eb}
 
 .section--compact .kv{padding:8px}
 .section--compact .kv .k{margin-bottom:4px}

@@ -43,8 +43,20 @@
             </div>
             <div class="menu-tile-v">Continuar revisando correos</div>
           </a>
+          <a class="menu-tile menu-tile--primary" href="{{ url_for('pendientes') }}">
+            <div class="menu-tile-top">
+              <div class="menu-tile-icon" aria-hidden="true">
+                <svg class="icon" viewBox="0 0 24 24">
+                  <path d="M12 8v5l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" />
+                </svg>
+              </div>
+              <div class="menu-tile-k">Pendientes</div>
+            </div>
+            <div class="menu-tile-v">Listado de correos pendientes</div>
+          </a>
           {% if can_stats %}
-            <a class="menu-tile menu-tile--stats" href="{{ url_for('stats') }}">
+            <a class="menu-tile menu-tile--stats" href="{{ url_for('stats') }}" data-overlay-nav="Cargando estadísticas...">
               <div class="menu-tile-top">
                 <div class="menu-tile-icon" aria-hidden="true">
                   <svg class="icon" viewBox="0 0 24 24">
@@ -59,7 +71,22 @@
               </div>
               <div class="menu-tile-v">Indicadores y actividad</div>
             </a>
-            <a class="menu-tile menu-tile--listado" href="{{ url_for('stats_listado') }}">
+            <a class="menu-tile menu-tile--primary" href="{{ url_for('stats_my') }}" data-overlay-nav="Cargando estadísticas MY...">
+              <div class="menu-tile-top">
+                <div class="menu-tile-icon" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M4 19V5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M4 19h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M8 15v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M12 15V9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M16 15v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="menu-tile-k">Estadísticas MY</div>
+              </div>
+              <div class="menu-tile-v">Estadísticas de correos pendientes</div>
+            </a>
+            <a class="menu-tile menu-tile--listado" href="{{ url_for('listado') }}" data-overlay-nav="Cargando listado...">
               <div class="menu-tile-top">
                 <div class="menu-tile-icon" aria-hidden="true">
                   <svg class="icon" viewBox="0 0 24 24">
@@ -79,4 +106,3 @@
     </main>
   </div>
 {% endblock %}
-

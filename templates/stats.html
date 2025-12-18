@@ -19,7 +19,9 @@
       </div>
     </div>
     <div class="topbar-right">
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_listado') }}">Listado</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estadísticas MY</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Continuar revisando</a>
       <div class="pill">{{ current_user }}</div>
       <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
@@ -40,61 +42,129 @@
   </header>
 
   <main class="page page--full">
+    <div
+      id="stats-loader"
+      class="hidden"
+      data-keep-overlay="1"
+      data-days="{{ days }}"
+      data-api-revisiones="{{ url_for('api_stats_revisiones', days=days) }}"
+    ></div>
     <div class="stats-grid">
       <div class="card stat">
         <div class="stat-k">Revisiones (últimos {{ days }} días)</div>
-        <div class="stat-v">{{ total_resultados }}</div>
+        <div class="stat-v" id="statTotalRevisiones">{{ total_resultados }}</div>
       </div>
       <div class="card stat">
         <div class="stat-k">Descartes (últimos {{ days }} días)</div>
-        <div class="stat-v">{{ total_descartes }}</div>
+        <div class="stat-v" id="statTotalDescartes">{{ total_descartes }}</div>
       </div>
       <div class="card stat">
         <div class="stat-k">KO% (sobre revisiones)</div>
-        <div class="stat-v">{{ ko_rate }}</div>
+        <div class="stat-v" id="statKoRate">{{ ko_rate }}</div>
       </div>
       <div class="card stat">
         <div class="stat-k">DUDA</div>
-        <div class="stat-v">{{ duda_count }}</div>
+        <div class="stat-v" id="statDuda">{{ duda_count }}</div>
       </div>
     </div>
 
     <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto">
       <section class="section section--review">
         <div class="section-title">Estados (Top 10)</div>
-        <div class="kv-list">
-          {% for k,v,p in by_status %}
-            <div class="kv-row kv-row-3"><div class="k">{{ k }}</div><div class="v">{{ v }}</div><div class="v">{{ p }}</div></div>
-          {% endfor %}
-        </div>
+        <div class="kv-list" id="listByStatus"></div>
       </section>
 
       <section class="section section--act">
         <div class="section-title">Top Automatismos (Top 10)</div>
-        <div class="kv-list">
-          {% for k,v,p in top_automatismos %}
-            <div class="kv-row kv-row-3"><div class="k">{{ k }}</div><div class="v">{{ v }}</div><div class="v">{{ p }}</div></div>
-          {% endfor %}
-        </div>
+        <div class="kv-list" id="listTopAutomatismos"></div>
       </section>
 
       <section class="section section--agent">
         <div class="section-title">Revisiones por usuario</div>
-        <div class="kv-list">
-          {% for k,v in by_user %}
-            <div class="kv-row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>
-          {% endfor %}
-        </div>
+        <div class="kv-list" id="listByUser"></div>
       </section>
 
       <section class="section section--mail">
         <div class="section-title">Actividad diaria</div>
-        <div class="kv-list">
-          {% for k,v in by_day %}
-            <div class="kv-row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>
-          {% endfor %}
-        </div>
+        <div class="kv-list" id="listByDay"></div>
       </section>
     </div>
+
+    <script>
+      window.addEventListener("DOMContentLoaded", () => {
+        const ui = window.MYMAIL_UI;
+        const loader = document.getElementById("stats-loader");
+        if (!loader) return;
+        const apiRevisiones = loader.dataset.apiRevisiones || "";
+
+        const setText = (id, value) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = String(value ?? "");
+        };
+
+        const fillList3 = (id, rows) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.innerHTML = "";
+          const items = Array.isArray(rows) ? rows : [];
+          if (!items.length) {
+            el.innerHTML = '<div class="kv-row"><div class="k">Sin datos</div><div class="v">0</div></div>';
+            return;
+          }
+          items.forEach(([k, v, p]) => {
+            const row = document.createElement("div");
+            row.className = "kv-row kv-row-3";
+            row.innerHTML = `<div class="k"></div><div class="v"></div><div class="v"></div>`;
+            row.children[0].textContent = String(k ?? "");
+            row.children[1].textContent = String(v ?? "");
+            row.children[2].textContent = String(p ?? "");
+            el.appendChild(row);
+          });
+        };
+
+        const fillList2 = (id, rows) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.innerHTML = "";
+          const items = Array.isArray(rows) ? rows : [];
+          if (!items.length) {
+            el.innerHTML = '<div class="kv-row"><div class="k">Sin datos</div><div class="v">0</div></div>';
+            return;
+          }
+          items.forEach(([k, v]) => {
+            const row = document.createElement("div");
+            row.className = "kv-row";
+            row.innerHTML = `<div class="k"></div><div class="v"></div>`;
+            row.children[0].textContent = String(k ?? "");
+            row.children[1].textContent = String(v ?? "");
+            el.appendChild(row);
+          });
+        };
+
+        const run = async () => {
+          try {
+            ui?.showOverlay?.("Consultando revisiones y descartes...");
+            const r1 = await fetch(apiRevisiones, { headers: { "X-Requested-With": "fetch" } });
+            const j1 = await r1.json();
+            if (!j1?.ok) throw new Error(j1?.error || "Error cargando stats de revisiones.");
+            const d1 = j1.data || {};
+            setText("statTotalRevisiones", d1.total_resultados ?? 0);
+            setText("statTotalDescartes", d1.total_descartes ?? 0);
+            setText("statKoRate", d1.ko_rate ?? "0%");
+            setText("statDuda", d1.duda_count ?? 0);
+            fillList3("listByStatus", d1.by_status || []);
+            fillList3("listTopAutomatismos", d1.top_automatismos || []);
+            fillList2("listByUser", d1.by_user || []);
+            fillList2("listByDay", d1.by_day || []);
+          } catch (e) {
+            ui?.showModal?.(String(e?.message || e || "Error cargando estadísticas."));
+          } finally {
+            ui?.hideOverlay?.();
+          }
+        };
+
+        run();
+      });
+    </script>
   </main>
 {% endblock %}

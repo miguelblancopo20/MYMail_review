@@ -18,10 +18,11 @@ import config
 from mymail.entrada import EntradaKey, clear_expired_locks, refresh_lock, release_lock, validate_lock
 from mymail.entrada import get_record as entrada_get_record
 from mymail.entrada import delete_record as entrada_delete_record
+from mymail.entrada import list_pending_meta
 from mymail.state import get_state, reset_state
-from mymail.revisiones_blob import list_revisions
+from mymail.revisiones_blob import get_revision, list_revisions, upload_revision
 from mymail.tables import ROLE_ADMIN, list_users, log_click, verify_user
-from mymail.tables import _list_by_days
+from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
 
 
@@ -64,6 +65,27 @@ def create_app() -> Flask:
             return tuple(nums)  # type: ignore[return-value]
 
         return parse(current) >= parse(minimum)
+
+    _CACHE = {}
+
+    def _cache_get(key: str, *, ttl_seconds: int):
+        try:
+            item = _CACHE.get(key)
+            if not item:
+                return None
+            if (datetime.now(timezone.utc) - item["ts"]).total_seconds() > ttl_seconds:
+                _CACHE.pop(key, None)
+                return None
+            return item["value"]
+        except Exception:
+            return None
+
+    def _cache_set(key: str, value, *, ttl_seconds: int):
+        try:
+            _CACHE[key] = {"ts": datetime.now(timezone.utc), "value": value, "ttl": int(ttl_seconds)}
+        except Exception:
+            pass
+        return value
 
     def azure_openai_responses(messages: list[dict], *, temperature: float = 0.2, max_output_tokens: int = 350) -> str:
         endpoint_raw = (getattr(config, "AZURE_OPENAI_ENDPOINT", "") or "").strip()
@@ -420,6 +442,186 @@ def create_app() -> Flask:
         reset_state()
         return redirect(url_for("review"))
 
+    @app.get("/pendientes")
+    def pendientes():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+
+        selected_id = (request.args.get("idcorreo") or "").strip()
+        selected_tematica = (request.args.get("tematica") or "").strip()
+        selected_subtematica = (request.args.get("subtematica") or "").strip()
+        selected_automatismo = (request.args.get("automatismo") or "").strip()
+        selected_validado = (request.args.get("validado") or "").strip()
+        selected_motivo = (request.args.get("motivo") or "").strip()
+        selected_comentario = (request.args.get("comentario") or "").strip()
+
+        page = 1
+        per_page = 10
+        try:
+            page = int(str(request.args.get("page") or page).strip())
+        except Exception:
+            page = 1
+        try:
+            per_page = int(str(request.args.get("per_page") or per_page).strip())
+        except Exception:
+            per_page = 10
+        page = max(1, page)
+        per_page = max(1, min(100, per_page))
+
+        def contains(value: str, needle: str) -> bool:
+            if not needle:
+                return True
+            return needle.lower() in (value or "").lower()
+
+        try:
+            metas = list_pending_meta(limit=5000)
+        except Exception as exc:
+            return render_template(
+                "done.html",
+                message=f"No se pudo cargar la lista de pendientes (tabla 'entrada'): {exc}",
+            )
+
+        if selected_id:
+            metas = [m for m in metas if contains(m.get("record_id", ""), selected_id)]
+        if selected_automatismo:
+            metas = [m for m in metas if contains(m.get("automatismo", ""), selected_automatismo)]
+
+        requires_full = any(
+            bool(v)
+            for v in (
+                selected_tematica,
+                selected_subtematica,
+                selected_validado,
+                selected_motivo,
+                selected_comentario,
+            )
+        )
+
+        def meta_sort_key(m: dict) -> str:
+            return str(m.get("timestamp", "") or "")
+
+        metas.sort(key=meta_sort_key, reverse=True)
+
+        rows: list[dict] = []
+        if requires_full:
+            for m in metas:
+                pk = str(m.get("pk", "") or "")
+                rk = str(m.get("rk", "") or "")
+                if not pk or not rk:
+                    continue
+                try:
+                    rec = entrada_get_record(EntradaKey(partition_key=pk, row_key=rk))
+                except Exception:
+                    continue
+
+                if selected_tematica and not contains(rec.get("Location", ""), selected_tematica):
+                    continue
+                if selected_subtematica and not contains(rec.get("Sublocation", ""), selected_subtematica):
+                    continue
+                if selected_validado and not contains(rec.get("Validado", ""), selected_validado):
+                    continue
+                if selected_motivo and not contains(rec.get("Motivo", ""), selected_motivo):
+                    continue
+                if selected_comentario and not contains(rec.get("Comentario", ""), selected_comentario):
+                    continue
+
+                rows.append({"meta": m, "record": rec})
+        else:
+            rows = [{"meta": m} for m in metas]
+
+        total = len(rows)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        if page > total_pages:
+            page = total_pages
+
+        start = (page - 1) * per_page
+        end = start + per_page
+        rows_page = rows[start:end]
+
+        if not requires_full:
+            for r in rows_page:
+                m = r.get("meta") if isinstance(r.get("meta"), dict) else {}
+                pk = str(m.get("pk", "") or "")
+                rk = str(m.get("rk", "") or "")
+                if not pk or not rk:
+                    r["record"] = {}
+                    continue
+                try:
+                    r["record"] = entrada_get_record(EntradaKey(partition_key=pk, row_key=rk))
+                except Exception:
+                    r["record"] = {}
+
+        for r in rows_page:
+            m = r.get("meta") if isinstance(r.get("meta"), dict) else {}
+            rec = r.get("record") if isinstance(r.get("record"), dict) else {}
+            r["pk"] = str(m.get("pk", "") or "")
+            r["rk"] = str(m.get("rk", "") or "")
+            r["record_id"] = str(m.get("record_id", "") or "") or str(rec.get("IdCorreo", "") or "")
+            r["timestamp"] = format_ts(str(m.get("timestamp", "") or "") or str(rec.get("@timestamp", "") or ""))
+            r["automatismo"] = str(m.get("automatismo", "") or "") or str(rec.get("Automatismo", "") or "")
+            r["tematica"] = str(rec.get("Location", "") or "")
+            r["subtematica"] = str(rec.get("Sublocation", "") or "")
+            r["validado"] = str(rec.get("Validado", "") or "")
+            r["motivo"] = str(rec.get("Motivo", "") or "")
+            r["comentario"] = str(rec.get("Comentario", "") or "")
+            r["lock_owner"] = str(m.get("lock_owner", "") or "")
+            r["lock_until"] = format_ts(str(m.get("lock_until", "") or ""))
+
+        return render_template(
+            "pendientes.html",
+            title="Pendientes",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=session.pop("_error", None),
+            can_stats=(session.get("role") or "") == ROLE_ADMIN,
+            selected_id=selected_id,
+            selected_tematica=selected_tematica,
+            selected_subtematica=selected_subtematica,
+            selected_automatismo=selected_automatismo,
+            selected_validado=selected_validado,
+            selected_motivo=selected_motivo,
+            selected_comentario=selected_comentario,
+            per_page=per_page,
+            page=page,
+            total=total,
+            total_pages=total_pages,
+            rows=rows_page,
+        )
+
+    @app.get("/pendientes/abrir")
+    def pendientes_abrir():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+
+        pk = (request.args.get("pk") or "").strip()
+        rk = (request.args.get("rk") or "").strip()
+        if not pk or not rk:
+            session["_error"] = "Faltan parámetros para abrir el registro (pk/rk)."
+            return redirect(url_for("pendientes"))
+
+        state = get_state()
+        username = session.get("user", "")
+        ok = False
+        try:
+            ok = state.select_specific(EntradaKey(partition_key=pk, row_key=rk), owner=username)
+        except Exception:
+            ok = False
+
+        if not ok:
+            session["_error"] = "No se pudo abrir el registro: puede estar bloqueado por otro usuario o no disponible."
+            return redirect(url_for("pendientes"))
+
+        try:
+            if state.current_key and state.lock_token:
+                session["_lock"] = {"pk": state.current_key.partition_key, "rk": state.current_key.row_key, "token": state.lock_token}
+                new_until = refresh_lock(state.current_key, owner=username, token=state.lock_token)
+                if new_until:
+                    session["_lock_until_ms"] = int(new_until.timestamp() * 1000)
+        except Exception:
+            pass
+
+        return redirect(url_for("review"))
+
     @app.get("/stats")
     def stats():
         if not session.get("authenticated"):
@@ -434,29 +636,103 @@ def create_app() -> Flask:
         except Exception:
             days = 14
         days = max(1, min(90, days))
-        now = datetime.now(timezone.utc)
-        day_keys = [(now - timedelta(days=i)).strftime("%Y%m%d") for i in range(days)]
+        return render_template(
+            "stats.html",
+            title="Stats",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=None,
+            days=days,
+            total_resultados=0,
+            total_descartes=0,
+            ko_rate="—",
+            duda_count=0,
+            by_status=[],
+            by_user=[],
+            by_day=[],
+            top_automatismos=[],
+            pending_error=None,
+            pending_total=0,
+            pending_loaded=0,
+            pending_by_tematica=[],
+            pending_top_tematica=[],
+            pending_top_matriculas=[],
+            pending_ranking_motivo=[],
+            stats_deferred=True,
+        )
 
+    @app.get("/stats/my")
+    def stats_my():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede ver Estadísticas MY."
+            return redirect(url_for("review"))
+
+        selected_week_start = (request.args.get("week_start") or "").strip()
+
+        week_options = []
         try:
-            resultados = _list_by_days(getattr(config, "TABLE_RESULTADOS", "resultados"), day_keys)
-            descartes = _list_by_days(getattr(config, "TABLE_DESCARTES", "descartes"), day_keys)
-        except Exception as exc:
-            return render_template(
-                "stats.html",
-                title="Stats",
-                current_user=session.get("user", ""),
-                app_version=app_version,
-                error=str(exc),
-                days=days,
-                total_resultados=0,
-                total_descartes=0,
-                ko_rate="0%",
-                duda_count=0,
-                by_status=[],
-                by_user=[],
-                by_day=[],
-                top_automatismos=[],
-            )
+            metas = list_pending_meta(limit=5000)
+            week_starts = set()
+            tz = ZoneInfo("Europe/Madrid")
+            for m in metas:
+                ts = str((m or {}).get("timestamp", "") or "").strip()
+                if not ts:
+                    continue
+                try:
+                    v = ts
+                    if v.endswith("Z"):
+                        v = v[:-1] + "+00:00"
+                    dt = datetime.fromisoformat(v)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.astimezone(tz)
+                    ws = (dt.date() - timedelta(days=dt.weekday()))
+                    week_starts.add(ws)
+                except Exception:
+                    continue
+
+            for ws in sorted(week_starts, reverse=True):
+                we = ws + timedelta(days=6)
+                week_no = ws.isocalendar().week
+                week_options.append(
+                    {
+                        "value": ws.isoformat(),
+                        "label": f"SEMANA{week_no}: {ws.strftime('%d/%m/%Y')} - {we.strftime('%d/%m/%Y')}",
+                    }
+                )
+        except Exception:
+            week_options = []
+
+        return render_template(
+            "stats_my.html",
+            title="Estadísticas MY",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=session.pop("_error", None),
+            week_options=week_options,
+            selected_week_start=selected_week_start,
+        )
+
+    @app.get("/api/stats/revisiones")
+    def api_stats_revisiones():
+        if not session.get("authenticated"):
+            return jsonify({"ok": False, "error": "No autenticado."}), 401
+        if (session.get("role") or "") != ROLE_ADMIN:
+            return jsonify({"ok": False, "error": "No autorizado."}), 403
+
+        days = 14
+        try:
+            days = int(str(request.args.get("days") or days).strip())
+        except Exception:
+            days = 14
+        days = max(1, min(90, days))
+
+        cache_key = f"stats:rev:{days}"
+        cached = _cache_get(cache_key, ttl_seconds=60)
+        if cached is not None:
+            return jsonify({"ok": True, "data": cached})
 
         def count_by(items, key, *, skip_empty: bool = False):
             out = {}
@@ -474,6 +750,20 @@ def create_app() -> Flask:
                 out.append((k, v, pct))
             return out
 
+        now = datetime.now(timezone.utc)
+        start_day = (now - timedelta(days=days - 1)).strftime("%Y%m%d")
+        end_day = now.strftime("%Y%m%d")
+
+        try:
+            resultados = _list_by_day_range(
+                getattr(config, "TABLE_RESULTADOS", "resultados"), start_day=start_day, end_day=end_day
+            )
+            descartes = _list_by_day_range(
+                getattr(config, "TABLE_DESCARTES", "descartes"), start_day=start_day, end_day=end_day
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
         total_resultados = len(resultados)
         total_descartes = len(descartes)
         by_status_raw = count_by(resultados, "status", skip_empty=True)
@@ -488,25 +778,161 @@ def create_app() -> Flask:
         duda_count = sum(v for k, v in by_status_raw if k == "DUDA")
         ko_rate = f"{round((ko_count / total_resultados) * 100)}%" if total_resultados else "0%"
 
-        return render_template(
-            "stats.html",
-            title="Stats",
-            current_user=session.get("user", ""),
-            app_version=app_version,
-            error=None,
-            days=days,
-            total_resultados=total_resultados,
-            total_descartes=total_descartes,
-            ko_rate=ko_rate,
-            duda_count=duda_count,
-            by_status=by_status,
-            by_user=by_user,
-            by_day=by_day,
-            top_automatismos=top_automatismos,
-        )
+        data = {
+            "total_resultados": total_resultados,
+            "total_descartes": total_descartes,
+            "ko_rate": ko_rate,
+            "duda_count": duda_count,
+            "by_status": by_status,
+            "top_automatismos": top_automatismos,
+            "by_user": by_user,
+            "by_day": by_day,
+        }
+        _cache_set(cache_key, data, ttl_seconds=60)
+        return jsonify({"ok": True, "data": data})
 
-    @app.get("/stats/listado")
-    def stats_listado():
+    @app.get("/api/stats/pendientes")
+    def api_stats_pendientes():
+        if not session.get("authenticated"):
+            return jsonify({"ok": False, "error": "No autenticado."}), 401
+        if (session.get("role") or "") != ROLE_ADMIN:
+            return jsonify({"ok": False, "error": "No autorizado."}), 403
+
+        week_start = (request.args.get("week_start") or "").strip()
+        cache_key = f"stats:pendientes:{week_start or 'all'}"
+        cached = _cache_get(cache_key, ttl_seconds=60)
+        if cached is not None:
+            return jsonify({"ok": True, "data": cached})
+
+        def count_by(items, key, *, skip_empty: bool = False):
+            out = {}
+            for it in items:
+                val = str(it.get(key, "") or "")
+                if skip_empty and not val.strip():
+                    continue
+                out[val] = out.get(val, 0) + 1
+            return sorted(out.items(), key=lambda kv: kv[1], reverse=True)
+
+        def with_pct(items: list[tuple[str, int]], *, total: int) -> list[tuple[str, int, str]]:
+            out = []
+            for k, v in items:
+                pct = f"{round((v / total) * 100)}%" if total else "0%"
+                out.append((k, v, pct))
+            return out
+
+        def pending_matricula(record: dict) -> str:
+            direct_keys = [
+                "MatriculaAsesor",
+                "MatrículaAsesor",
+                "matriculaAsesor",
+                "matrículaAsesor",
+                "Matricula",
+                "Matrícula",
+                "matricula",
+                "matrícula",
+                "Ficha",
+                "Ficha cliente",
+                "Ficha Cliente",
+                "IdEmpleado",
+                "EmployeeId",
+            ]
+            for k in direct_keys:
+                v = str((record or {}).get(k, "") or "").strip()
+                if v:
+                    return v
+
+            items = parse_mailtoagent((record or {}).get("MailToAgent", "") or "")
+            if not items:
+                return ""
+            mail_norm = {norm_key(str(k)): v for k, v in items}
+            for k in ("matricula asesor", "matrícula asesor", "matricula", "matrícula", "ficha", "ficha cliente"):
+                v = str(mail_norm.get(k, "") or "").strip()
+                if v:
+                    return v
+            return ""
+
+        pending_items_cache = _cache_get("pending_items:v1", ttl_seconds=60)
+        if pending_items_cache is None:
+            try:
+                metas = list_pending_meta(limit=5000)
+            except Exception as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 500
+            pending_total = len(metas)
+            pending_loaded = 0
+            pending_items_all: list[dict] = []
+            for m in metas:
+                pk = str(m.get("pk", "") or "")
+                rk = str(m.get("rk", "") or "")
+                if not pk or not rk:
+                    continue
+                try:
+                    rec = entrada_get_record(EntradaKey(partition_key=pk, row_key=rk))
+                except Exception:
+                    continue
+                pending_loaded += 1
+                tematica = str(rec.get("Location", "") or "").strip() or "—"
+                motivo = str(rec.get("Motivo", "") or "").strip() or "—"
+                matricula = pending_matricula(rec).strip() or "—"
+                ts = str(rec.get("@timestamp", "") or "").strip()
+                pending_items_all.append({"tematica": tematica, "motivo": motivo, "matricula": matricula, "timestamp": ts})
+            pending_items_cache = _cache_set(
+                "pending_items:v1",
+                {"pending_total": pending_total, "pending_loaded": pending_loaded, "items": pending_items_all},
+                ttl_seconds=60,
+            )
+
+        pending_total = int((pending_items_cache or {}).get("pending_total") or 0)
+        pending_loaded = int((pending_items_cache or {}).get("pending_loaded") or 0)
+        pending_items = list((pending_items_cache or {}).get("items") or [])
+
+        if week_start:
+            try:
+                tz = ZoneInfo("Europe/Madrid")
+                ws = datetime.fromisoformat(week_start).date()
+                start_local = datetime(ws.year, ws.month, ws.day, tzinfo=tz)
+                end_local = start_local + timedelta(days=7)
+                start_dt = start_local.astimezone(timezone.utc)
+                end_dt = end_local.astimezone(timezone.utc)
+            except Exception:
+                start_dt = None
+                end_dt = None
+            if start_dt and end_dt:
+                def _in_week(ts_raw: str) -> bool:
+                    try:
+                        v = (ts_raw or "").strip()
+                        if v.endswith("Z"):
+                            v = v[:-1] + "+00:00"
+                        dt = datetime.fromisoformat(v)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        dt = dt.astimezone(timezone.utc)
+                        return start_dt <= dt < end_dt
+                    except Exception:
+                        return False
+
+                pending_items = [it for it in pending_items if _in_week(str(it.get("timestamp", "") or ""))]
+                pending_loaded = len(pending_items)
+
+        pending_by_tematica_raw = count_by(pending_items, "tematica", skip_empty=False)
+        pending_by_tematica = with_pct(pending_by_tematica_raw, total=pending_loaded)
+        pending_top_matriculas_raw = count_by(pending_items, "matricula", skip_empty=True)[:10]
+        pending_top_matriculas = with_pct(pending_top_matriculas_raw, total=pending_loaded)
+
+        pending_motivo_raw = count_by(pending_items, "motivo", skip_empty=True)[:20]
+        pending_ranking_motivo = with_pct(pending_motivo_raw, total=pending_loaded)
+
+        data = {
+            "pending_total": pending_total,
+            "pending_loaded": pending_loaded,
+            "pending_by_tematica": pending_by_tematica,
+            "pending_top_matriculas": pending_top_matriculas,
+            "pending_ranking_motivo": pending_ranking_motivo,
+        }
+        _cache_set(cache_key, data, ttl_seconds=60)
+        return jsonify({"ok": True, "data": data})
+
+    @app.get("/listado")
+    def listado():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
         if (session.get("role") or "") != ROLE_ADMIN:
@@ -765,6 +1191,26 @@ def create_app() -> Flask:
                 if str(g.get("key", "") or "") == "otros":
                     r["_otros_items"] = list(g.get("items") or [])
                     break
+            history = r.get("history") if isinstance(r.get("history"), list) else []
+            history_rows: list[tuple[str, str, str]] = []
+            for h in history:
+                if not isinstance(h, dict):
+                    continue
+                ts = format_ts_madrid(str(h.get("timestamp", "") or ""))
+                user = str(h.get("user", "") or "") or str(h.get("edited_by", "") or "") or "—"
+                changes = h.get("changes") if isinstance(h.get("changes"), dict) else {}
+                parts = []
+                for k, v in changes.items():
+                    if not isinstance(v, dict):
+                        continue
+                    from_ = v.get("from")
+                    to_ = v.get("to")
+                    if from_ == to_:
+                        continue
+                    parts.append(f"{k}: {from_} → {to_}")
+                summary = "; ".join(parts)[:180] if parts else (str(h.get("action", "") or "") or "—")
+                history_rows.append((ts or "—", user, summary))
+            r["_history_rows"] = history_rows
             r["_internal_note_kv"] = _parse_internal_note(str(r.get("internal_note", "") or ""))
             if r["_internal_note_kv"]:
                 lines = []
@@ -802,8 +1248,8 @@ def create_app() -> Flask:
             rows=rows_page,
         )
 
-    @app.get("/stats/listado/download")
-    def stats_listado_download():
+    @app.get("/listado/download")
+    def listado_download():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
         if (session.get("role") or "") != ROLE_ADMIN:
@@ -890,6 +1336,225 @@ def create_app() -> Flask:
             as_attachment=True,
             download_name=f"{base}.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @app.get("/stats/listado")
+    def stats_listado_redirect():
+        return redirect(url_for("listado", **request.args))
+
+    @app.get("/stats/listado/download")
+    def stats_listado_download_redirect():
+        return redirect(url_for("listado_download", **request.args))
+
+    @app.get("/listado/editar")
+    def listado_editar():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede editar revisiones."
+            return redirect(url_for("review"))
+
+        blob = (request.args.get("blob") or "").strip()
+        next_url = (request.args.get("next") or "").strip()
+        if not blob:
+            session["_error"] = "Falta el identificador de la revisión (blob)."
+            return redirect(url_for("listado"))
+
+        try:
+            rev = get_revision(blob)
+        except Exception as exc:
+            session["_error"] = f"No se pudo cargar la revisión: {exc}"
+            return redirect(url_for("listado"))
+
+        record = rev.get("record") if isinstance(rev.get("record"), dict) else {}
+        record = {k: ("" if v is None else str(v)) for k, v in record.items()}
+        record["@timestamp"] = format_ts(str(record.get("@timestamp", "") or ""))
+        record["Question"] = normalize_multiline(record.get("Question", ""))
+
+        mail_items = parse_mailtoagent(record.get("MailToAgent", ""))
+        mail_norm = {norm_key(str(k)): v for k, v in (mail_items or [])}
+
+        def get_mail(*norm_keys: str) -> str:
+            for k in norm_keys:
+                if k in mail_norm and str(mail_norm.get(k, "")).strip():
+                    return str(mail_norm.get(k, ""))
+            return ""
+
+        mail_meta = {
+            "From": get_mail("from", "remitente"),
+            "Ficha": get_mail("ficha", "ficha cliente"),
+            "Categorizaci\u00f3n": get_mail("categorizacion", "categoria", "categoria final"),
+            "Acci\u00f3n": get_mail("accion", "accion final"),
+        }
+
+        def first_by_prefix(*prefixes: str) -> str:
+            for prefix in prefixes:
+                for nk, val in mail_norm.items():
+                    if nk.startswith(prefix) and str(val).strip():
+                        return str(val)
+            return ""
+
+        act_summary = first_by_prefix("resumen")
+        act_proposal = first_by_prefix("propuesta de actuacion", "propuesta actuacion")
+        if not act_proposal:
+            for nk, val in mail_norm.items():
+                if nk.startswith("propuesta") and nk != "propuesta respuesta" and str(val).strip():
+                    act_proposal = str(val)
+                    break
+        act_params = first_by_prefix("parametros")
+
+        act_items = []
+        if mail_items:
+            skip_norm = {
+                "from",
+                "remitente",
+                "ficha",
+                "ficha cliente",
+                "categorizacion",
+                "categoria",
+                "categoria final",
+                "accion",
+                "accion final",
+                "resumen",
+                "propuesta",
+                "propuesta respuesta",
+                "propuesta de actuacion",
+                "propuesta actuacion",
+                "parametros",
+            }
+            for k, v in mail_items:
+                nk = norm_key(str(k))
+                if nk in skip_norm:
+                    continue
+                act_items.append((str(k), str(v)))
+
+        history = rev.get("history") if isinstance(rev.get("history"), list) else []
+
+        return render_template(
+            "review.html",
+            record=record,
+            mail_meta=mail_meta,
+            act_summary=act_summary,
+            act_proposal=act_proposal,
+            act_params=act_params,
+            act_items=act_items,
+            pending=0,
+            current_user=session.get("user", ""),
+            can_stats=True,
+            can_ai=False,
+            app_version=app_version,
+            title="Editar revisión",
+            error=session.pop("_error", None),
+            lock_until_ms="",
+            edit_mode=True,
+            form_action=url_for("listado_editar_post"),
+            back_url=next_url or url_for("listado"),
+            edit_blob=blob,
+            edit_original_user=str(rev.get("user", "") or ""),
+            history=history,
+            initial_status=str(rev.get("status", "") or "Pendiente"),
+            initial_multitematica=bool(rev.get("multitematica")),
+            initial_ko_mym_reason=str(rev.get("ko_mym_reason", "") or ""),
+            initial_reviewer_note=str(rev.get("reviewer_note", "") or ""),
+            initial_internal_note=str(rev.get("internal_note", "") or ""),
+        )
+
+    @app.post("/listado/editar")
+    def listado_editar_post():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede editar revisiones."
+            return redirect(url_for("review"))
+
+        blob = (request.form.get("edit_blob") or "").strip()
+        original_user = (request.form.get("edit_original_user") or "").strip()
+        back_url = (request.form.get("back_url") or "").strip() or url_for("listado")
+        if not blob:
+            session["_error"] = "Falta el identificador de la revisión (blob)."
+            return redirect(back_url)
+
+        try:
+            rev = get_revision(blob)
+        except Exception as exc:
+            session["_error"] = f"No se pudo cargar la revisión: {exc}"
+            return redirect(back_url)
+
+        status_new = (request.form.get("status") or "Pendiente").strip()
+        reviewer_note_new = request.form.get("reviewer_note") or ""
+        internal_note_new = request.form.get("internal_note") or ""
+        ko_mym_reason_new = request.form.get("ko_mym_reason") or ""
+        multitematica_new = (request.form.get("multitematica") or "").strip() in {"1", "on", "true", "True"}
+
+        status_old = str(rev.get("status", "") or "")
+        reviewer_note_old = str(rev.get("reviewer_note", "") or "")
+        internal_note_old = str(rev.get("internal_note", "") or "")
+        ko_mym_reason_old = str(rev.get("ko_mym_reason", "") or "")
+        multitematica_old = bool(rev.get("multitematica"))
+
+        changes = {}
+        if status_new != status_old:
+            changes["status"] = {"from": status_old, "to": status_new}
+        if ko_mym_reason_new != ko_mym_reason_old:
+            changes["ko_mym_reason"] = {"from": ko_mym_reason_old, "to": ko_mym_reason_new}
+        if multitematica_new != multitematica_old:
+            changes["multitematica"] = {"from": multitematica_old, "to": multitematica_new}
+        if reviewer_note_new != reviewer_note_old:
+            changes["reviewer_note"] = {"from": reviewer_note_old, "to": reviewer_note_new}
+        if internal_note_new != internal_note_old:
+            changes["internal_note"] = {"from": internal_note_old, "to": internal_note_new}
+
+        if not changes:
+            return redirect(url_for("listado_editar_done", msg="No hay cambios que guardar.", next=back_url))
+
+        now = datetime.now(timezone.utc)
+        history = rev.get("history") if isinstance(rev.get("history"), list) else []
+        history.append(
+            {
+                "timestamp": now.isoformat(),
+                "user": session.get("user", ""),
+                "action": "edited",
+                "source_blob": blob,
+                "changes": changes,
+            }
+        )
+
+        payload = dict(rev)
+        payload.pop("_blob_name", None)
+        payload["timestamp"] = now.isoformat()
+        payload["edited_by"] = session.get("user", "")
+        payload["status"] = status_new
+        payload["ko_mym_reason"] = ko_mym_reason_new
+        payload["multitematica"] = bool(multitematica_new)
+        payload["reviewer_note"] = reviewer_note_new
+        payload["internal_note"] = internal_note_new
+        payload["history"] = history
+
+        record_id = str(payload.get("record_id", "") or "") or str(((payload.get("record") or {}) if isinstance(payload.get("record"), dict) else {}).get("IdCorreo", "") or "")
+        log_click(action="edit_revision", username=session.get("user", ""), record_id=record_id, result="ok", extra={"source_blob": blob, "changes": changes})
+
+        try:
+            upload_revision(payload, username=original_user or (payload.get("user") or "") or "unknown", reviewed_at=now)
+        except Exception as exc:
+            session["_error"] = f"No se pudo guardar la edición: {exc}"
+            return redirect(back_url)
+
+        return redirect(url_for("listado_editar_done", msg="Cambios guardados.", next=back_url))
+
+    @app.get("/listado/editar/done")
+    def listado_editar_done():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        msg = (request.args.get("msg") or "").strip() or "OK"
+        next_url = (request.args.get("next") or "").strip() or url_for("listado")
+        return render_template(
+            "edit_done.html",
+            title="Edición",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=None,
+            message=msg,
+            next_url=next_url,
         )
 
     @app.post("/action")

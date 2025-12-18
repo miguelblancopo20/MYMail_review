@@ -79,3 +79,16 @@ def list_revisions(*, username: str = "", limit: int = 500) -> list[dict[str, An
             continue
     return out
 
+
+def get_revision(blob_name: str) -> dict[str, Any]:
+    blob_name = str(blob_name or "").strip()
+    if not blob_name:
+        raise ValueError("Falta blob_name")
+    service = _service()
+    container = service.get_container_client(_container_name())
+    data = container.download_blob(blob_name).readall().decode("utf-8", errors="replace")
+    obj = json.loads(data)
+    if not isinstance(obj, dict):
+        raise ValueError("Revision inválida")
+    obj["_blob_name"] = blob_name
+    return obj

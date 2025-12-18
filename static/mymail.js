@@ -4,7 +4,6 @@
   const modal = document.getElementById("mymail-modal");
   const modalText = document.getElementById("mymail-modal-text");
   const modalRefresh = document.getElementById("mymail-modal-refresh");
-  const modalClose = document.getElementById("mymail-modal-close");
   const show = (message) => {
     if (!overlay) return;
     if (overlayText && message) overlayText.textContent = message;
@@ -20,6 +19,12 @@
   const showModal = (message) => {
     if (!modal) return;
     if (modalText) modalText.textContent = message || "";
+    const msg = String(message || "");
+    const sessionExpired = /no autenticado|sesion caducada|sesión caducada/i.test(msg);
+    if (modalRefresh) {
+      modalRefresh.textContent = sessionExpired ? "Iniciar sesi\u00f3n de nuevo" : "Aceptar";
+      modalRefresh.dataset.action = sessionExpired ? "login" : "close";
+    }
     modal.style.display = "flex";
     modal.setAttribute("aria-hidden", "false");
   };
@@ -29,14 +34,24 @@
     modal.setAttribute("aria-hidden", "true");
   };
 
-  window.addEventListener("pageshow", hide);
+  window.MYMAIL_UI = {
+    showOverlay: show,
+    hideOverlay: hide,
+    showModal,
+  };
+
+  const keepOverlay = () => !!document.querySelector("[data-keep-overlay]");
+  window.addEventListener("pageshow", () => {
+    if (!keepOverlay()) hide();
+  });
   document.addEventListener("DOMContentLoaded", () => {
-    hide();
+    if (!keepOverlay()) hide();
     const pageStartMs = Date.now();
 
     const pageErrorEl = document.getElementById("page-error");
     const pageError = pageErrorEl?.dataset?.error || "";
     const pageRefreshUrl = pageErrorEl?.dataset?.refreshUrl || "";
+    const loginUrl = pageErrorEl?.dataset?.loginUrl || "/login";
 
     document.querySelectorAll("form[data-overlay]").forEach((form) => {
       form.addEventListener("submit", (e) => {
@@ -54,6 +69,13 @@
       });
     });
 
+    document.querySelectorAll("a[data-overlay-nav]").forEach((a) => {
+      a.addEventListener("click", () => {
+        const msg = a.dataset.overlayNav || "Cargando...";
+        show(msg);
+      });
+    });
+
     const statusSelect = document.getElementById("statusSelect");
     const btnSave = document.getElementById("btnSave");
     const btnSkip = document.getElementById("btnSkip");
@@ -61,12 +83,14 @@
     const koMymReasonWrap = document.getElementById("koMymReasonWrap");
     const koMymReason = document.getElementById("koMymReason");
     const reqNote = document.getElementById("reqNote");
+    const reviewForm = document.getElementById("reviewForm");
 
     const syncButtons = () => {
-      if (!statusSelect || !btnSave || !btnSkip) return;
-      const disabled = (statusSelect.value || "Pendiente") === "Pendiente";
+      if (!statusSelect || !btnSave) return;
+      const isEditMode = (reviewForm?.dataset?.editMode || "") === "1";
+      const disabled = !isEditMode && (statusSelect.value || "Pendiente") === "Pendiente";
       btnSave.disabled = disabled;
-      btnSkip.disabled = false;
+      if (btnSkip) btnSkip.disabled = false;
 
       const status = statusSelect.value || "";
       const needsNote = status.startsWith("KO") || status === "DUDA" || status === "FDS";
@@ -95,17 +119,30 @@
 
     const timerEl = document.getElementById("lockTimer");
     let lockUntilMs = Number(timerEl?.dataset?.lockUntilMs || 0);
+    let lockExpired = false;
     const renderTimer = () => {
       if (!timerEl) return;
+      if (lockExpired) {
+        timerEl.textContent = "Sesi\u00f3n caducada";
+        timerEl.classList.add("topbar-timer--expired");
+        timerEl.style.display = "";
+        return;
+      }
       if (!Number.isFinite(lockUntilMs) || lockUntilMs <= 0) {
         timerEl.style.display = "none";
         return;
       }
       const remaining = Math.max(0, lockUntilMs - Date.now());
+      if (remaining <= 0) {
+        lockExpired = true;
+        renderTimer();
+        return;
+      }
       const totalSeconds = Math.floor(remaining / 1000);
       const mm = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
       const ss = String(totalSeconds % 60).padStart(2, "0");
       timerEl.textContent = `${mm}:${ss}`;
+      timerEl.classList.remove("topbar-timer--expired");
       timerEl.style.display = "";
     };
     renderTimer();
@@ -113,11 +150,8 @@
 
     modalRefresh?.addEventListener("click", () => {
       hideModal();
-      window.location.href = refreshUrl;
-    });
-    modalClose?.addEventListener("click", hideModal);
-    modal?.addEventListener("click", (e) => {
-      if (e.target === modal) hideModal();
+      const action = modalRefresh?.dataset?.action || "close";
+      if (action === "login") window.location.href = loginUrl;
     });
 
     if (heartbeatUrl) {
@@ -134,7 +168,7 @@
           .then((res) => {
             if (res.status === 409) {
               inFlight = false;
-              lockUntilMs = 0;
+              lockExpired = true;
               renderTimer();
               showModal("Sesion caducada (10 min) o registro ya procesado por otro usuario.");
               return null;

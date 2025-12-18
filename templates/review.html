@@ -11,14 +11,23 @@
         <span>ID Correo</span>
         <div class="topbar-idline">
           <strong>{{ record.get("IdCorreo","") }}</strong>
-          <span class="topbar-timer" id="lockTimer" data-lock-until-ms="{{ lock_until_ms or '' }}">--:--</span>
+          {% if not edit_mode %}
+            <span class="topbar-timer" id="lockTimer" data-lock-until-ms="{{ lock_until_ms or '' }}">--:--</span>
+          {% endif %}
         </div>
       </div>
     </div>
     <div class="topbar-right">
-      <div class="pill">Pendientes: {{ pending }}</div>
+      {% if edit_mode %}
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ back_url or url_for('listado') }}">Volver</a>
+        <div class="pill">Editando</div>
+      {% else %}
+        <div class="pill">Pendientes: {{ pending }}</div>
+      {% endif %}
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
       {% if can_stats %}
-        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_listado') }}">Listado</a>
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estadísticas MY</a>
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
         <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estadísticas</a>
       {% endif %}
       <div class="pill">{{ current_user }}</div>
@@ -40,13 +49,15 @@
   </header>
 
   <main class="page page--full">
-    <div
-      id="lock-heartbeat"
-      class="hidden"
-      data-heartbeat-url="{{ url_for('heartbeat') }}"
-      data-refresh-url="{{ url_for('refresh') }}"
-      data-error="{{ (error or '') | e }}"
-    ></div>
+    {% if not edit_mode %}
+      <div
+        id="lock-heartbeat"
+        class="hidden"
+        data-heartbeat-url="{{ url_for('heartbeat') }}"
+        data-refresh-url="{{ url_for('refresh') }}"
+        data-error="{{ (error or '') | e }}"
+      ></div>
+    {% endif %}
     <div class="layout">
       <div class="layout-left">
         <section class="section section--mail">
@@ -136,40 +147,47 @@
         <section class="section section--review rightcol-review">
           <div class="section-title">Revisión EY</div>
 
-          <form method="post" action="{{ url_for('action') }}" class="stack" data-overlay id="reviewForm">
+          <form method="post" action="{{ form_action or url_for('action') }}" class="stack" data-overlay data-edit-mode="{{ 1 if edit_mode else 0 }}" id="reviewForm">
+            {% if edit_mode %}
+              <input type="hidden" name="edit_blob" value="{{ edit_blob or '' }}" />
+              <input type="hidden" name="edit_original_user" value="{{ edit_original_user or '' }}" />
+              <input type="hidden" name="back_url" value="{{ back_url or '' }}" />
+            {% endif %}
             <div class="field">
               <span>Estado revisión <span class="req-marker">*</span></span>
               <select name="status" id="statusSelect">
                 {% for opt in ["Pendiente","OK","KO MYM","KO AGENTE","DUDA","FDS"] %}
-                  <option value="{{ opt }}" {% if opt == "Pendiente" %}selected{% endif %}>{{ opt }}</option>
+                  <option value="{{ opt }}" {% if opt == (initial_status or "Pendiente") %}selected{% endif %}>{{ opt }}</option>
                 {% endfor %}
               </select>
             </div>
             <label class="checkbox">
-              <input type="checkbox" name="multitematica" value="1" />
+              <input type="checkbox" name="multitematica" value="1" {% if initial_multitematica %}checked{% endif %} />
               <span>Multitematica (opcional)</span>
             </label>
             <div class="field hidden" id="koMymReasonWrap">
               <span>Detalle KO MYM <span class="req-marker" id="reqKoMym">*</span></span>
               <select name="ko_mym_reason" id="koMymReason">
-                <option value="" selected>Pendiente</option>
+                <option value="" {% if not (initial_ko_mym_reason or '') %}selected{% endif %}>Pendiente</option>
                 {% for opt in ["KO TEMATICA","KO SUBTEMATICA","KO PARAMETROS","KO TEMÁTICA Y PARAMETROS","KO SUBTEMÁTICA Y PARAMETROS","OTRO"] %}
-                  <option value="{{ opt }}">{{ opt }}</option>
+                  <option value="{{ opt }}" {% if opt == (initial_ko_mym_reason or '') %}selected{% endif %}>{{ opt }}</option>
                 {% endfor %}
               </select>
             </div>
             <div class="field">
               <span>Comentario de revisión <span class="req-marker hidden" id="reqNote">*</span></span>
-              <input id="reviewerNote" name="reviewer_note" placeholder="Describe el ajuste a realizar" />
+              <input id="reviewerNote" name="reviewer_note" placeholder="Describe el ajuste a realizar" value="{{ initial_reviewer_note or '' }}" />
             </div>
             <div class="field">
               <span>Nota interna (opcional)</span>
-              <input name="internal_note" placeholder="Observaciones operativas o pasos siguientes." />
+              <input name="internal_note" placeholder="Observaciones operativas o pasos siguientes." value="{{ initial_internal_note or '' }}" />
             </div>
             <input type="hidden" name="elapsed_seconds" id="elapsedSeconds" value="" />
             <div class="actions actions-bottom actions-center">
-              <button class="btn btn-primary" type="submit" name="action" value="save" id="btnSave" disabled data-overlay-message="Guardando revisión...">Guardar</button>
-              <button class="btn btn-secondary" type="submit" name="action" value="skip" id="btnSkip" data-overlay-message="Guardando descarte...">Saltar</button>
+              <button class="btn btn-primary" type="submit" name="action" value="save" id="btnSave" disabled data-overlay-message="{{ 'Guardando cambios...' if edit_mode else 'Guardando revisión...' }}">{{ 'Guardar cambios' if edit_mode else 'Guardar' }}</button>
+              {% if not edit_mode %}
+                <button class="btn btn-secondary" type="submit" name="action" value="skip" id="btnSkip" data-overlay-message="Guardando descarte...">Saltar</button>
+              {% endif %}
             </div>
           </form>
         </section>

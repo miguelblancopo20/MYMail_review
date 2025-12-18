@@ -202,6 +202,20 @@ def write_resultado(
 ) -> None:
     now = _utcnow()
     client = _table(config.TABLE_RESULTADOS)
+    history = [
+        {
+            "timestamp": now.isoformat(),
+            "user": username or "",
+            "action": "created",
+            "changes": {
+                "status": {"from": "", "to": status},
+                "ko_mym_reason": {"from": "", "to": ko_mym_reason or ""},
+                "multitematica": {"from": False, "to": bool(multitematica)},
+                "reviewer_note": {"from": "", "to": reviewer_note or ""},
+                "internal_note": {"from": "", "to": internal_note or ""},
+            },
+        }
+    ]
     entity: Dict[str, Any] = {
         "PartitionKey": _day(now),
         "RowKey": uuid.uuid4().hex,
@@ -233,6 +247,7 @@ def write_resultado(
                 "multitematica": bool(multitematica),
                 "reviewer_note": reviewer_note or "",
                 "internal_note": internal_note or "",
+                "history": history,
                 "record": record,
             },
             username=username or "",
@@ -266,3 +281,15 @@ def _list_by_days(table_name: str, days: list[str]):
         filt = f"PartitionKey eq '{d}'"
         out.extend(list(client.query_entities(query_filter=filt)))
     return out
+
+
+def _list_by_day_range(table_name: str, *, start_day: str, end_day: str):
+    start_day = str(start_day or "").strip()
+    end_day = str(end_day or "").strip()
+    if not start_day or not end_day:
+        return []
+    if start_day > end_day:
+        start_day, end_day = end_day, start_day
+    client = _table(table_name)
+    filt = f"PartitionKey ge '{start_day}' and PartitionKey le '{end_day}'"
+    return list(client.query_entities(query_filter=filt))

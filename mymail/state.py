@@ -77,6 +77,39 @@ class ReviewState:
     def pending_count(self) -> int:
         return len(self.queue) + (1 if self.current_key else 0)
 
+    def select_specific(self, key: EntradaKey, *, owner: str) -> bool:
+        owner = (owner or "").strip()
+        if not owner:
+            return False
+
+        self.ensure_loaded()
+        if self.current_key and self.current_key == key and self.lock_token and self.current:
+            return True
+
+        try:
+            self.release_current_lock(owner=owner)
+        except Exception:
+            pass
+
+        acquired = try_acquire_lock(key, owner=owner, ttl_seconds=LOCK_TTL_SECONDS)
+        if not acquired:
+            return False
+        token, _ = acquired
+        try:
+            record = get_record(key)
+        except Exception:
+            try:
+                release_lock(key, owner=owner, token=token)
+            except Exception:
+                pass
+            return False
+
+        self.queue = [k for k in self.queue if not (k.partition_key == key.partition_key and k.row_key == key.row_key)]
+        self.current_key = key
+        self.current = record
+        self.lock_token = token
+        return True
+
     def _next_key(self) -> Optional[EntradaKey]:
         return self.queue.pop() if self.queue else None
 

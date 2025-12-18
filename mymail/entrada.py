@@ -55,6 +55,36 @@ def list_keys(partition_key: str = DEFAULT_PARTITION) -> List[EntradaKey]:
     return keys
 
 
+def list_pending_meta(partition_key: str = DEFAULT_PARTITION, *, limit: int | None = None) -> List[Dict[str, str]]:
+    client = _table()
+    filt = f"PartitionKey eq '{partition_key}'"
+    select = [
+        "PartitionKey",
+        "RowKey",
+        "record_id",
+        "timestamp",
+        "automatismo",
+        "lock_owner",
+        "lock_until",
+    ]
+    out: List[Dict[str, str]] = []
+    for ent in client.query_entities(query_filter=filt, select=select):
+        out.append(
+            {
+                "pk": str(ent.get("PartitionKey", "") or ""),
+                "rk": str(ent.get("RowKey", "") or ""),
+                "record_id": str(ent.get("record_id", "") or ""),
+                "timestamp": str(ent.get("timestamp", "") or ""),
+                "automatismo": str(ent.get("automatismo", "") or ""),
+                "lock_owner": str(ent.get("lock_owner", "") or ""),
+                "lock_until": str(ent.get("lock_until", "") or ""),
+            }
+        )
+        if limit is not None and len(out) >= int(limit):
+            break
+    return out
+
+
 def get_record(key: EntradaKey) -> Dict[str, str]:
     client = _table()
     ent = client.get_entity(partition_key=key.partition_key, row_key=key.row_key)

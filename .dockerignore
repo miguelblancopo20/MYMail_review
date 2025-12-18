@@ -10,8 +10,5 @@ node_modules
 build
 dist
 app/node_modules
-Validados_V3.xlsx
 *.xlsx
-revisiones.csv
-descartes.csv
 !.env

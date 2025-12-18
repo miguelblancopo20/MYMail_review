@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="topbar">
+    <div class="topbar-left">
+      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+    </div>
+    <div class="topbar-fields">
+      <div class="topbar-field"><span>Vista</span><strong>Estadísticas MY</strong></div>
+      <div class="topbar-field">
+        <span>Semana (L-D)</span>
+        <div class="topbar-control">
+          <form method="get" class="topbar-inline">
+            <select name="week_start" class="topbar-input" style="width:220px">
+              <option value="" {% if not selected_week_start %}selected{% endif %}>Todas</option>
+              {% for opt in (week_options or []) %}
+                <option value="{{ opt.get('value','') }}" {% if opt.get('value','') == (selected_week_start or '') %}selected{% endif %}>{{ opt.get('label','') }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-ghost" type="submit">Aplicar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estadísticas</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisión</a>
+      <div class="pill">{{ current_user }}</div>
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <main class="page page--full">
+    <div
+      id="stats-my-loader"
+      class="hidden"
+      data-keep-overlay="1"
+      data-api="{{ url_for('api_stats_pendientes', week_start=(selected_week_start or '')) }}"
+      data-week="{{ selected_week_start or '' }}"
+    ></div>
+
+    <section class="section section--mail" style="margin-top:0">
+      <div class="section-title">Estadísticas de correos pendientes</div>
+      <div class="actions" style="justify-content:flex-start; gap:10px; flex-wrap:wrap; margin-top:8px">
+        <div class="pill" id="pillPendingTotal">Pendientes: —</div>
+        <div class="pill" id="pillPendingLoaded">Cargados: —</div>
+      </div>
+
+      <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto; margin-top:10px">
+        <section class="section section--act" style="margin-top:0">
+          <div class="section-title">Pendientes por temática (n y %)</div>
+          <div class="kv-list" id="listPendingByTematica"></div>
+        </section>
+
+        <section class="section section--agent" style="margin-top:0">
+          <div class="section-title">Top MatriculaAsesor (Top 10)</div>
+          <div class="kv-list" id="listPendingTopMatriculas"></div>
+        </section>
+
+        <section class="section section--review" style="margin-top:0">
+          <div class="section-title">Ranking por motivo (Top 20)</div>
+          <div class="kv-list" id="listPendingMotivo"></div>
+        </section>
+      </div>
+    </section>
+
+    <script>
+      window.addEventListener("DOMContentLoaded", () => {
+        const ui = window.MYMAIL_UI;
+        const loader = document.getElementById("stats-my-loader");
+        if (!loader) return;
+        const api = loader.dataset.api || "";
+
+        const setText = (id, value) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = String(value ?? "");
+        };
+
+        const fillList3 = (id, rows) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.innerHTML = "";
+          const items = Array.isArray(rows) ? rows : [];
+          if (!items.length) {
+            el.innerHTML = '<div class="kv-row"><div class="k">Sin datos</div><div class="v">0</div></div>';
+            return;
+          }
+          items.forEach(([k, v, p]) => {
+            const row = document.createElement("div");
+            row.className = "kv-row kv-row-3";
+            row.innerHTML = `<div class="k"></div><div class="v"></div><div class="v"></div>`;
+            row.children[0].textContent = String(k ?? "");
+            row.children[1].textContent = String(v ?? "");
+            row.children[2].textContent = String(p ?? "");
+            el.appendChild(row);
+          });
+        };
+
+        const run = async () => {
+          try {
+            ui?.showOverlay?.("Consultando pendientes...");
+            const r = await fetch(api, { headers: { "X-Requested-With": "fetch" } });
+            const j = await r.json();
+            if (!j?.ok) throw new Error(j?.error || "Error cargando estadísticas MY.");
+            const d = j.data || {};
+            setText("pillPendingTotal", `Pendientes: ${d.pending_total ?? 0}`);
+            setText("pillPendingLoaded", `Cargados: ${d.pending_loaded ?? 0}`);
+            fillList3("listPendingByTematica", d.pending_by_tematica || []);
+            fillList3("listPendingTopMatriculas", d.pending_top_matriculas || []);
+            fillList3("listPendingMotivo", d.pending_ranking_motivo || []);
+          } catch (e) {
+            ui?.showModal?.(String(e?.message || e || "Error cargando estadísticas MY."));
+          } finally {
+            ui?.hideOverlay?.();
+          }
+        };
+
+        run();
+      });
+    </script>
+  </main>
+{% endblock %}

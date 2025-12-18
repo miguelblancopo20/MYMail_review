@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="topbar">
+    <div class="topbar-left">
+      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+    </div>
+    <div class="topbar-fields">
+      <div class="topbar-field"><span>Vista</span><strong>Pendientes</strong></div>
+    </div>
+    <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
+      {% if can_stats %}
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estad&iacute;sticas MY</a>
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
+      {% endif %}
+      <div class="pill">{{ current_user }}</div>
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <main class="page page--full">
+    <section class="section section--review" style="margin-top:0">
+      <div class="section-title">Correos pendientes (Entrada)</div>
+
+      <form method="get" class="actions" style="justify-content:flex-start; gap:12px; flex-wrap:wrap">
+        <input type="hidden" name="page" value="1" />
+        <input type="hidden" name="per_page" value="{{ per_page or 10 }}" />
+
+        <div class="field" style="min-width:220px">
+          <span>ID Correo</span>
+          <input name="idcorreo" value="{{ selected_id or '' }}" placeholder="Ej: 12345" />
+        </div>
+        <div class="field" style="min-width:220px">
+          <span>Tem&aacute;tica</span>
+          <input name="tematica" value="{{ selected_tematica or '' }}" placeholder="Ej: N&oacute;minas" />
+        </div>
+        <div class="field" style="min-width:220px">
+          <span>Subtem&aacute;tica</span>
+          <input name="subtematica" value="{{ selected_subtematica or '' }}" placeholder="Ej: Certificados" />
+        </div>
+        <div class="field" style="min-width:220px">
+          <span>Automatismo</span>
+          <input name="automatismo" value="{{ selected_automatismo or '' }}" placeholder="Ej: baja_it" />
+        </div>
+
+        <div class="field" style="min-width:220px">
+          <span>Validado (Agente)</span>
+          <input name="validado" value="{{ selected_validado or '' }}" placeholder="Ej: SI/NO" />
+        </div>
+        <div class="field" style="min-width:220px">
+          <span>Motivo (Agente)</span>
+          <input name="motivo" value="{{ selected_motivo or '' }}" placeholder="Contiene..." />
+        </div>
+        <div class="field" style="min-width:220px">
+          <span>Comentario (Agente)</span>
+          <input name="comentario" value="{{ selected_comentario or '' }}" placeholder="Contiene..." />
+        </div>
+
+        <div class="actions" style="align-items:flex-end">
+          <button class="btn btn-primary" type="submit">Aplicar</button>
+        </div>
+      </form>
+
+      <div class="actions" style="justify-content:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap">
+        <div class="pill">Total: {{ total }}</div>
+      </div>
+
+      <div style="overflow:auto; margin-top:10px">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>ID Correo</th>
+              <th>Tem&aacute;tica</th>
+              <th>Subtem&aacute;tica</th>
+              <th>Automatismo</th>
+              <th>Validado</th>
+              <th>Motivo</th>
+              <th>Comentario</th>
+              <th>Bloqueo</th>
+              <th>Acci&oacute;n</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              <tr>
+                <td>{{ r.get("timestamp","") }}</td>
+                <td>{{ r.get("record_id","") }}</td>
+                <td>{{ r.get("tematica","") }}</td>
+                <td>{{ r.get("subtematica","") }}</td>
+                <td>{{ r.get("automatismo","") }}</td>
+                <td>{{ r.get("validado","") }}</td>
+                <td style="min-width:220px">{{ r.get("motivo","") }}</td>
+                <td style="min-width:260px">{{ r.get("comentario","") }}</td>
+                <td style="min-width:220px">
+                  {% if r.get("lock_owner") %}
+                    <div class="kv kv-vert" style="padding:8px">
+                      <div class="k">Owner</div><div class="v">{{ r.get("lock_owner","") }}</div>
+                      <div class="k" style="margin-top:6px">Hasta</div><div class="v">{{ r.get("lock_until","") }}</div>
+                    </div>
+                  {% else %}
+                    <span class="pill pill-sm">Libre</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a
+                    class="btn btn-secondary btn-sm"
+                    href="{{ url_for('pendientes_abrir', pk=r.get('pk',''), rk=r.get('rk','')) }}"
+                  >Revisar</a>
+                </td>
+              </tr>
+            {% endfor %}
+            {% if not rows %}
+              <tr><td colspan="10" class="tbl-empty">Sin resultados</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="list-footer">
+        <div class="list-footer-right">
+          {% if page > 1 %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=1) }}">&laquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=page-1) }}">&lsaquo;</a>
+          {% endif %}
+          <div class="pill pill-sm">P&aacute;gina {{ page }} / {{ total_pages }}</div>
+          {% if page < total_pages %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=page+1) }}">&rsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=total_pages) }}">&raquo;</a>
+          {% endif %}
+          <form method="get" class="list-footer-form">
+            <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="idcorreo" value="{{ selected_id or '' }}" />
+            <input type="hidden" name="tematica" value="{{ selected_tematica or '' }}" />
+            <input type="hidden" name="subtematica" value="{{ selected_subtematica or '' }}" />
+            <input type="hidden" name="automatismo" value="{{ selected_automatismo or '' }}" />
+            <input type="hidden" name="validado" value="{{ selected_validado or '' }}" />
+            <input type="hidden" name="motivo" value="{{ selected_motivo or '' }}" />
+            <input type="hidden" name="comentario" value="{{ selected_comentario or '' }}" />
+            <select name="per_page" class="select-compact" onchange="this.form.submit()" aria-label="Filas por p&aacute;gina">
+              {% for opt in [10,25,50] %}
+                <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+{% endblock %}
