@@ -3,11 +3,22 @@ from __future__ import annotations
 import secrets
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from flask import session
 
-from mymail.entrada import LOCK_TTL_SECONDS, EntradaKey, delete_record, get_record, list_keys, refresh_lock, release_lock
+from mymail.entrada import (
+    LOCK_TTL_SECONDS,
+    EntradaKey,
+    clear_expired_locks,
+    delete_record,
+    get_record,
+    list_keys,
+    list_pending_meta,
+    refresh_lock,
+    release_lock,
+)
 from mymail.entrada import try_acquire_lock, validate_lock
 from mymail.tables import write_descarte, write_resultado
 
@@ -52,27 +63,71 @@ class ReviewState:
     current: Dict[str, str] = field(default_factory=dict)
     lock_token: str = ""
     excel_missing: bool = False
+    _refreshed_once: bool = False
 
-    def ensure_loaded(self) -> None:
-        if self.queue or self.current_key or self.excel_missing:
+    def ensure_loaded(self, *, force: bool = False) -> None:
+        if not force and (self.queue or self.current_key or self.excel_missing):
             return
         try:
-            keys = list_keys()
+            metas = list_pending_meta(limit=20000)
         except Exception:
-            self.excel_missing = True
-            return
-        if not keys:
-            self.excel_missing = False
-            self.queue = []
-            self.current_key = None
-            self.current = {}
-            return
-        import random
+            metas = []
 
-        random.shuffle(keys)
+        keys: List[EntradaKey] = []
+        if metas:
+            now = datetime.now(timezone.utc)
+
+            def parse_dt(value: str):
+                v = (value or "").strip()
+                if not v:
+                    return None
+                try:
+                    if v.endswith("Z"):
+                        v = v[:-1] + "+00:00"
+                    dt = datetime.fromisoformat(v)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.astimezone(timezone.utc)
+                except Exception:
+                    return None
+
+            available: List[EntradaKey] = []
+            all_keys: List[EntradaKey] = []
+            for m in metas:
+                pk = str((m or {}).get("pk", "") or "").strip()
+                rk = str((m or {}).get("rk", "") or "").strip()
+                if not pk or not rk:
+                    continue
+                k = EntradaKey(partition_key=pk, row_key=rk)
+                all_keys.append(k)
+
+                lock_owner = str((m or {}).get("lock_owner", "") or "").strip()
+                until = parse_dt(str((m or {}).get("lock_until", "") or ""))
+                is_free = (not lock_owner) or (until is None) or (until <= now)
+                if is_free:
+                    available.append(k)
+
+            keys = available or all_keys
+
+        if not keys:
+            try:
+                keys = list_keys()
+            except Exception:
+                self.excel_missing = True
+                self.queue = []
+                self.current_key = None
+                self.current = {}
+                return
+
+        self.excel_missing = False
         self.queue = keys
         self.current_key = None
         self.current = {}
+        self.lock_token = ""
+        self._refreshed_once = False
+        import random
+
+        random.shuffle(keys)
 
     def pending_count(self) -> int:
         return len(self.queue) + (1 if self.current_key else 0)
@@ -115,13 +170,28 @@ class ReviewState:
 
     def current_record(self, *, owner: str) -> Dict[str, str]:
         owner = (owner or "").strip()
+        start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        attempts = 0
         while True:
+            attempts += 1
+            if attempts > 250:
+                raise RuntimeError("No se pudo seleccionar un correo (demasiados intentos adquiriendo lock).")
+            if int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms > 25_000:
+                raise TimeoutError("Timeout seleccionando un correo pendiente en CosmosDB (25s).")
             if not self.current_key:
                 self.current_key = self._next_key()
                 self.current = {}
                 self.lock_token = ""
 
             if not self.current_key:
+                if not self._refreshed_once:
+                    self._refreshed_once = True
+                    try:
+                        clear_expired_locks()
+                    except Exception:
+                        pass
+                    self.ensure_loaded(force=True)
+                    continue
                 return {}
 
             if not self.lock_token:

@@ -16,9 +16,6 @@ class CosmosContainers:
 
 
 def cosmos_enabled() -> bool:
-    backend = (getattr(config, "STORAGE_BACKEND", "") or "").strip().lower()
-    if backend != "cosmos":
-        return False
     endpoint = (getattr(config, "COSMOS_ENDPOINT", "") or "").strip()
     key = (getattr(config, "COSMOS_KEY", "") or "").strip()
     return bool(endpoint and key)
@@ -68,7 +65,14 @@ def client():
         from azure.cosmos import CosmosClient
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("Falta instalar azure-cosmos (pip install -r requirements.txt)") from exc
-    _CLIENT = CosmosClient(_require_endpoint(), credential=_require_key())
+    # Evita "cargas infinitas" si hay problemas de red o Cosmos está degradado.
+    # Estos timeouts fuerzan a que falle rápido y podamos mostrar un error en la UI.
+    _CLIENT = CosmosClient(
+        _require_endpoint(),
+        credential=_require_key(),
+        connection_timeout=5,
+        request_timeout=20,
+    )
     return _CLIENT
 
 
@@ -114,4 +118,3 @@ def ensure_resources() -> None:
             db.create_container(id=name, partition_key=PartitionKey(path="/pk"))
         except CosmosResourceExistsError:
             continue
-

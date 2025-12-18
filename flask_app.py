@@ -21,7 +21,7 @@ from mymail.entrada import delete_record as entrada_delete_record
 from mymail.entrada import list_pending_meta
 from mymail.entrada import list_pending_payloads_for_stats, record_from_payload
 from mymail.state import get_state, reset_state
-from mymail.revisiones_blob import get_revision, list_revisions, upload_revision
+from mymail.revisiones import get_revision, list_revisions, save_revision
 from mymail.tables import ROLE_ADMIN, list_users, log_click, verify_user
 from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
@@ -35,6 +35,8 @@ def create_app() -> Flask:
         or (os.environ.get("FLASK_SECRET_KEY", "") or "").strip()
         or "dev-secret-change-me"
     )
+
+    # Cosmos-only: no hacemos "ensure" automático (puede bloquear si no hay permisos de creación).
 
     def normalize_multiline(value: str) -> str:
         if not value:
@@ -277,13 +279,14 @@ def create_app() -> Flask:
             return redirect(url_for("login"))
 
         state = get_state()
-        if state.excel_missing:
-            return render_template("done.html", message="No se puede acceder a la entrada (tabla 'entrada'). Revisa Azure y config.py.")
 
         username = session.get("user", "")
         error = session.pop("_error", None)
         lock_until_ms = session.get("_lock_until_ms")
-        record = state.current_record(owner=username)
+        try:
+            record = state.current_record(owner=username)
+        except Exception as exc:
+            return render_template("done.html", message=f"Error cargando un registro desde CosmosDB: {exc}")
         if not record:
             return render_template("done.html", message="No quedan registros pendientes o disponibles.")
 
@@ -479,7 +482,7 @@ def create_app() -> Flask:
         except Exception as exc:
             return render_template(
                 "done.html",
-                message=f"No se pudo cargar la lista de pendientes (tabla 'entrada'): {exc}",
+                message=f"No se pudo cargar la lista de pendientes (Cosmos container 'entrada'): {exc}",
             )
 
         if selected_id:
@@ -756,10 +759,10 @@ def create_app() -> Flask:
 
         try:
             resultados = _list_by_day_range(
-                getattr(config, "TABLE_RESULTADOS", "resultados"), start_day=start_day, end_day=end_day
+                getattr(config, "COSMOS_CONTAINER_RESULTADOS", "resultados"), start_day=start_day, end_day=end_day
             )
             descartes = _list_by_day_range(
-                getattr(config, "TABLE_DESCARTES", "descartes"), start_day=start_day, end_day=end_day
+                getattr(config, "COSMOS_CONTAINER_DESCARTES", "descartes"), start_day=start_day, end_day=end_day
             )
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
@@ -1533,7 +1536,7 @@ def create_app() -> Flask:
         log_click(action="edit_revision", username=session.get("user", ""), record_id=record_id, result="ok", extra={"source_blob": blob, "changes": changes})
 
         try:
-            upload_revision(payload, username=original_user or (payload.get("user") or "") or "unknown", reviewed_at=now)
+            save_revision(blob, payload)
         except Exception as exc:
             session["_error"] = f"No se pudo guardar la edición: {exc}"
             return redirect(back_url)

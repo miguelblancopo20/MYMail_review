@@ -26,10 +26,6 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--database", default="", help="Sobrescribe COSMOS_DATABASE")
     args = parser.parse_args(argv)
 
-    backend = (getattr(config, "STORAGE_BACKEND", "") or "").strip().lower() or "tables"
-    if backend != "cosmos":
-        print(f"WARNING: STORAGE_BACKEND={backend!r} (pon STORAGE_BACKEND=cosmos para usar CosmosDB).")
-
     endpoint = _require("COSMOS_ENDPOINT")
     key = _require("COSMOS_KEY")
     db_name = (args.database or (getattr(config, "COSMOS_DATABASE", "") or "")).strip() or "mymailreview"
@@ -74,4 +70,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-
