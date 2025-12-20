@@ -67,6 +67,15 @@ def create_user(username: str, password: str, *, role: str = ROLE_REVISOR) -> No
     if username.lower() == "admin":
         role = ROLE_ADMIN
     c = _cosmos(_containers().users)
+    created_at = now.isoformat()
+    try:
+        existing = c.read_item(item=username, partition_key="users")
+        if isinstance(existing, dict):
+            prev = str(existing.get("created_at", "") or "").strip()
+            if prev:
+                created_at = prev
+    except Exception:
+        pass
     c.upsert_item(
         {
             "id": username,
@@ -74,7 +83,7 @@ def create_user(username: str, password: str, *, role: str = ROLE_REVISOR) -> No
             "password_hash": generate_password_hash(password),
             "role": role,
             "active": True,
-            "created_at": now.isoformat(),
+            "created_at": created_at,
         }
     )
 
@@ -106,7 +115,7 @@ def list_users() -> list[dict[str, str]]:
     try:
         c = _cosmos(_containers().users)
         rows = c.query_items(
-            query="SELECT c.id, c.role, c.active FROM c WHERE c.pk=@pk",
+            query="SELECT c.id, c.role, c.active, c.created_at FROM c WHERE c.pk=@pk",
             parameters=[{"name": "@pk", "value": "users"}],
             enable_cross_partition_query=True,
         )
@@ -116,6 +125,7 @@ def list_users() -> list[dict[str, str]]:
                     "username": str(ent.get("id", "") or ""),
                     "role": normalize_role(str(ent.get("role", "") or ROLE_REVISOR)),
                     "active": "1" if bool(ent.get("active", True)) else "0",
+                    "created_at": str(ent.get("created_at", "") or ""),
                 }
             )
     except Exception:
@@ -124,22 +134,48 @@ def list_users() -> list[dict[str, str]]:
     return out
 
 
+def get_user(username: str) -> dict[str, Any] | None:
+    username = (username or "").strip()
+    if not username:
+        return None
+    if not cosmos_enabled():
+        return None
+    try:
+        from azure.cosmos.exceptions import CosmosResourceNotFoundError  # type: ignore
+    except Exception:  # pragma: no cover
+        return None
+
+    try:
+        c = _cosmos(_containers().users)
+        ent = c.read_item(item=username, partition_key="users")
+        return ent if isinstance(ent, dict) else None
+    except CosmosResourceNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
 def verify_user(username: str, password: str) -> AuthResult:
     username = (username or "").strip()
     if not username or not password:
         return AuthResult(False, "missing")
 
+    if not cosmos_enabled():
+        return AuthResult(False, "cosmos_disabled")
+
     try:
-        from azure.cosmos.exceptions import CosmosResourceNotFoundError
+        from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFoundError
     except Exception:  # pragma: no cover
-        return AuthResult(False, "not_found")
+        return AuthResult(False, "cosmos_client_missing")
     c = _cosmos(_containers().users)
     try:
         entity = c.read_item(item=username, partition_key="users")
     except CosmosResourceNotFoundError:
         return AuthResult(False, "not_found")
+    except CosmosHttpResponseError:
+        return AuthResult(False, "cosmos_error")
     except Exception:
-        return AuthResult(False, "not_found")
+        return AuthResult(False, "cosmos_error")
 
     if not bool(entity.get("active", True)):
         return AuthResult(False, "inactive")

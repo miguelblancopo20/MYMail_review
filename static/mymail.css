@@ -127,6 +127,9 @@ body{
   outline:none;
   background:rgba(255,255,255,0.92);
 }
+.password-row{display:flex;align-items:center;gap:8px}
+.password-row input{flex:1}
+.password-row .btn{white-space:nowrap}
 .field textarea{resize:vertical;font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
 .field.readonly input,.field.readonly textarea{background:rgba(255,255,255,0.85)}
 .field-head{display:flex;align-items:center;justify-content:space-between;gap:12px}

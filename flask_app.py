@@ -22,7 +22,7 @@ from mymail.entrada import list_pending_meta
 from mymail.entrada import list_pending_payloads_for_stats, record_from_payload
 from mymail.state import get_state, reset_state
 from mymail.revisiones import get_revision, list_revisions, save_revision
-from mymail.tables import ROLE_ADMIN, create_user, list_users, log_click, set_user_password, set_user_role, verify_user
+from mymail.tables import ROLE_ADMIN, create_user, get_user, list_users, log_click, set_user_password, set_user_role, verify_user
 from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
 
@@ -37,6 +37,27 @@ def create_app() -> Flask:
     )
 
     # Cosmos-only: no hacemos "ensure" automático (puede bloquear si no hay permisos de creación).
+
+    @app.before_request
+    def _log_page_view():
+        try:
+            if request.method != "GET":
+                return
+            if request.path.startswith("/static"):
+                return
+            if (request.headers.get("X-Requested-With") or "").lower() == "fetch":
+                return
+            if not session.get("authenticated"):
+                return
+            username = session.get("user", "") or ""
+            if not username:
+                return
+            endpoint = request.endpoint or ""
+            if endpoint.startswith("api_"):
+                return
+            log_click(action="page_view", username=username, record_id=request.path, result="ok", extra={"endpoint": endpoint})
+        except Exception:
+            return
 
     def normalize_multiline(value: str) -> str:
         if not value:
@@ -249,6 +270,13 @@ def create_app() -> Flask:
             return redirect(url_for("menu"))
 
         log_click(action="login", username=username, result=f"fail:{auth.reason}")
+        if auth.reason in {"cosmos_disabled", "cosmos_client_missing", "cosmos_error"}:
+            return render_template(
+                "login.html",
+                error="No se pudo validar el usuario: CosmosDB no disponible desde local.",
+                title="Revisor de Mayordomo Mail",
+                app_version=app_version,
+            )
         return render_template(
             "login.html",
             error="Usuario o contraseña incorrectos. Inténtalo de nuevo.",
@@ -274,6 +302,63 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("login"))
 
+    @app.get("/account")
+    def account():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        msg = (request.args.get("msg") or "").strip()
+        is_admin = (session.get("role") or "") == ROLE_ADMIN
+        return render_template(
+            "account.html",
+            title="Mi cuenta",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=session.pop("_error", None),
+            message=msg,
+            is_admin=is_admin,
+        )
+
+    @app.post("/account/password")
+    def account_password():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        username = session.get("user", "") or ""
+        if not username:
+            return redirect(url_for("login"))
+
+        current_password = request.form.get("current_password") or ""
+        new_password = request.form.get("new_password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+        if not new_password.strip():
+            session["_error"] = "La nueva contraseña no puede estar vacía."
+            return redirect(url_for("account"))
+        if new_password != confirm_password:
+            session["_error"] = "La confirmación no coincide."
+            return redirect(url_for("account"))
+        if len(new_password) < 6:
+            session["_error"] = "La nueva contraseña debe tener al menos 6 caracteres."
+            return redirect(url_for("account"))
+
+        auth = verify_user(username, current_password)
+        if not auth.ok:
+            if auth.reason == "invalid":
+                session["_error"] = "La contraseña actual no es correcta."
+            elif auth.reason in {"cosmos_disabled", "cosmos_client_missing", "cosmos_error"}:
+                session["_error"] = "No se pudo validar la contraseña actual: CosmosDB no disponible."
+            else:
+                session["_error"] = "No se pudo validar la contraseña actual."
+            return redirect(url_for("account"))
+
+        try:
+            set_user_password(username=username, password=new_password)
+            log_click(action="password_change", username=username, result="ok")
+        except Exception as exc:
+            session["_error"] = str(exc)
+            log_click(action="password_change", username=username, result="fail", extra={"error": str(exc)[:200]})
+            return redirect(url_for("account"))
+
+        return redirect(url_for("account", msg="Contraseña actualizada."))
+
     @app.get("/admin")
     def admin_menu():
         if not session.get("authenticated"):
@@ -283,6 +368,9 @@ def create_app() -> Flask:
             return redirect(url_for("menu"))
 
         msg = (request.args.get("msg") or "").strip()
+        users = list_users()
+        for u in users:
+            u["created_at"] = format_ts_madrid(str(u.get("created_at", "") or ""))
         return render_template(
             "admin.html",
             title="Administrador",
@@ -290,7 +378,7 @@ def create_app() -> Flask:
             app_version=app_version,
             error=session.pop("_error", None),
             message=msg,
-            users=list_users(),
+            users=users,
         )
 
     @app.post("/admin/users")
@@ -303,29 +391,44 @@ def create_app() -> Flask:
 
         action_type = (request.form.get("action") or "").strip()
         username = (request.form.get("username") or "").strip()
+        caller = session.get("user", "") or ""
 
         try:
             if action_type == "add":
                 password = request.form.get("password") or ""
                 role = (request.form.get("role") or "").strip() or "Revisor"
-                create_user(username=username, password=password, role=role)
-                log_click(action="admin_user_add", username=session.get("user", ""), record_id=username, result="ok")
-                return redirect(url_for("admin_menu", msg=f"Usuario '{username}' creado/actualizado."))
+                existing = get_user(username)
+                if existing is None:
+                    if not password:
+                        raise RuntimeError("Para crear un usuario nuevo, la contraseña es obligatoria.")
+                    create_user(username=username, password=password, role=role)
+                    log_click(action="admin_user_add", username=caller, record_id=username, result="ok")
+                    return redirect(url_for("admin_menu", msg=f"Usuario '{username}' creado."))
+
+                set_user_role(username=username, role=role)
+                if password and username != caller:
+                    raise RuntimeError("No puedes cambiar la contraseña de otro usuario.")
+                if password and username == caller:
+                    set_user_password(username=username, password=password)
+                log_click(action="admin_user_update", username=caller, record_id=username, result="ok")
+                return redirect(url_for("admin_menu", msg=f"Usuario '{username}' actualizado."))
 
             if action_type == "set_role":
                 role = (request.form.get("role") or "").strip() or "Revisor"
                 set_user_role(username=username, role=role)
-                log_click(action="admin_user_role", username=session.get("user", ""), record_id=username, result="ok", extra={"role": role})
+                log_click(action="admin_user_role", username=caller, record_id=username, result="ok", extra={"role": role})
                 return redirect(url_for("admin_menu", msg=f"Rol actualizado para '{username}'."))
 
             if action_type == "set_password":
                 password = request.form.get("password") or ""
+                if username != caller:
+                    raise RuntimeError("No puedes cambiar la contraseña de otro usuario.")
                 set_user_password(username=username, password=password)
-                log_click(action="admin_user_password", username=session.get("user", ""), record_id=username, result="ok")
+                log_click(action="admin_user_password", username=caller, record_id=username, result="ok")
                 return redirect(url_for("admin_menu", msg=f"Contraseña actualizada para '{username}'."))
         except Exception as exc:
             session["_error"] = str(exc)
-            log_click(action="admin_user", username=session.get("user", ""), record_id=username, result="fail", extra={"action": action_type, "error": str(exc)[:200]})
+            log_click(action="admin_user", username=caller, record_id=username, result="fail", extra={"action": action_type, "error": str(exc)[:200]})
             return redirect(url_for("admin_menu"))
 
         session["_error"] = "Acción no válida."

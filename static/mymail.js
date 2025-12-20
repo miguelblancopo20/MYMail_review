@@ -57,6 +57,18 @@
     if (!keepOverlay()) hide();
     const pageStartMs = Date.now();
 
+    document.querySelectorAll("[data-password-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const wrap = btn.closest("[data-password-wrap]") || btn.parentElement;
+        const input = wrap ? wrap.querySelector("input") : null;
+        if (!input) return;
+        const isPwd = input.type === "password";
+        input.type = isPwd ? "text" : "password";
+        btn.textContent = isPwd ? "Ocultar" : "Mostrar";
+        btn.setAttribute("aria-pressed", isPwd ? "true" : "false");
+      });
+    });
+
     const pageErrorEl = document.getElementById("page-error");
     const pageError = pageErrorEl?.dataset?.error || "";
     const pageRefreshUrl = pageErrorEl?.dataset?.refreshUrl || "";

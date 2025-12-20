@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="topbar">
+    <div class="topbar-left">
+      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+    </div>
+    <div class="topbar-fields">
+      <div class="topbar-field"><span>Vista</span><strong>Mi cuenta</strong></div>
+    </div>
+    <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('menu') }}">Men&uacute;</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
+      {% if is_admin %}
+        <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('admin_menu') }}">Administrador</a>
+      {% endif %}
+      <a class="pill pill-link" href="{{ url_for('account') }}">{{ current_user }}</a>
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <main class="page page--full">
+    {% if message %}
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">OK</div>
+        <p style="margin:0;color:#374151">{{ message }}</p>
+      </div>
+    {% endif %}
+
+    <div class="layout" style="grid-template-columns: 1fr; height:auto; max-width:720px">
+      <section class="section section--review">
+        <div class="section-title">Cambiar contraseña</div>
+        <form method="post" action="{{ url_for('account_password') }}" class="stack" data-overlay data-overlay-message="Actualizando contraseña...">
+          <label class="field">
+            <span>Contrase&ntilde;a actual</span>
+            <div class="password-row" data-password-wrap>
+              <input name="current_password" type="password" autocomplete="current-password" required />
+              <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>Nueva contrase&ntilde;a</span>
+            <div class="password-row" data-password-wrap>
+              <input name="new_password" type="password" autocomplete="new-password" required />
+              <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>Confirmar nueva contrase&ntilde;a</span>
+            <div class="password-row" data-password-wrap>
+              <input name="confirm_password" type="password" autocomplete="new-password" required />
+              <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
+            </div>
+          </label>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Guardar</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+{% endblock %}
+

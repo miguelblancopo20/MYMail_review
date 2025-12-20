@@ -31,7 +31,7 @@
       {% if (session.get("role") or "") == "Administrador" %}
         <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
       {% else %}
-        <div class="pill">{{ current_user }}</div>
+        <a class="pill pill-link" href="{{ url_for('account') }}">{{ current_user }}</a>
       {% endif %}
       <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
