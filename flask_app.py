@@ -22,7 +22,7 @@ from mymail.entrada import list_pending_meta
 from mymail.entrada import list_pending_payloads_for_stats, record_from_payload
 from mymail.state import get_state, reset_state
 from mymail.revisiones import get_revision, list_revisions, save_revision
-from mymail.tables import ROLE_ADMIN, list_users, log_click, verify_user
+from mymail.tables import ROLE_ADMIN, create_user, list_users, log_click, set_user_password, set_user_role, verify_user
 from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
 
@@ -234,6 +234,8 @@ def create_app() -> Flask:
 
         auth = verify_user(username, password)
         if auth.ok:
+            reset_state()
+            session.clear()
             session["authenticated"] = True
             session["user"] = username
             session["role"] = auth.role or ""
@@ -244,7 +246,6 @@ def create_app() -> Flask:
                     log_click(action="lock_cleanup", username=username, result="ok", extra={"cleared": cleared})
             except Exception:
                 pass
-            reset_state()
             return redirect(url_for("menu"))
 
         log_click(action="login", username=username, result=f"fail:{auth.reason}")
@@ -272,6 +273,63 @@ def create_app() -> Flask:
             reset_state()
         session.clear()
         return redirect(url_for("login"))
+
+    @app.get("/admin")
+    def admin_menu():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede gestionar usuarios."
+            return redirect(url_for("menu"))
+
+        msg = (request.args.get("msg") or "").strip()
+        return render_template(
+            "admin.html",
+            title="Administrador",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=session.pop("_error", None),
+            message=msg,
+            users=list_users(),
+        )
+
+    @app.post("/admin/users")
+    def admin_users_post():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if (session.get("role") or "") != ROLE_ADMIN:
+            session["_error"] = "No autorizado: solo Administrador puede gestionar usuarios."
+            return redirect(url_for("menu"))
+
+        action_type = (request.form.get("action") or "").strip()
+        username = (request.form.get("username") or "").strip()
+
+        try:
+            if action_type == "add":
+                password = request.form.get("password") or ""
+                role = (request.form.get("role") or "").strip() or "Revisor"
+                create_user(username=username, password=password, role=role)
+                log_click(action="admin_user_add", username=session.get("user", ""), record_id=username, result="ok")
+                return redirect(url_for("admin_menu", msg=f"Usuario '{username}' creado/actualizado."))
+
+            if action_type == "set_role":
+                role = (request.form.get("role") or "").strip() or "Revisor"
+                set_user_role(username=username, role=role)
+                log_click(action="admin_user_role", username=session.get("user", ""), record_id=username, result="ok", extra={"role": role})
+                return redirect(url_for("admin_menu", msg=f"Rol actualizado para '{username}'."))
+
+            if action_type == "set_password":
+                password = request.form.get("password") or ""
+                set_user_password(username=username, password=password)
+                log_click(action="admin_user_password", username=session.get("user", ""), record_id=username, result="ok")
+                return redirect(url_for("admin_menu", msg=f"Contraseña actualizada para '{username}'."))
+        except Exception as exc:
+            session["_error"] = str(exc)
+            log_click(action="admin_user", username=session.get("user", ""), record_id=username, result="fail", extra={"action": action_type, "error": str(exc)[:200]})
+            return redirect(url_for("admin_menu"))
+
+        session["_error"] = "Acción no válida."
+        return redirect(url_for("admin_menu"))
 
     @app.get("/review")
     def review():
@@ -1597,7 +1655,7 @@ def create_app() -> Flask:
             token = str(lock.get("token", "") or "")
             if not pk or not rk or not token:
                 log_click(action=action_type, username=username, result="blocked:missing_lock")
-                session["_error"] = "Sesion caducada. Pulsa refrescar para cargar otro registro."
+                session["_error"] = "Bloqueo caducado. Pulsa refrescar para cargar otro registro."
                 return redirect(url_for("review"))
 
             key = EntradaKey(partition_key=pk, row_key=rk)
@@ -1620,7 +1678,7 @@ def create_app() -> Flask:
                     state.abandon_current()
                 except Exception:
                     pass
-                session["_error"] = "Sesion caducada (10 min) o registro ya procesado por otro usuario."
+                session["_error"] = "Bloqueo caducado (10 min) o registro ya procesado por otro usuario."
                 return redirect(url_for("review"))
 
         record_id = ""

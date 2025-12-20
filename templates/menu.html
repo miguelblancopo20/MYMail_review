@@ -10,7 +10,11 @@
         <div class="topbar-field"><span>Vista</span><strong>Menú</strong></div>
       </div>
       <div class="topbar-right">
-        <div class="pill">{{ current_user }}</div>
+        {% if (session.get("role") or "") == "Administrador" %}
+          <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
+        {% else %}
+          <div class="pill">{{ current_user }}</div>
+        {% endif %}
         <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path

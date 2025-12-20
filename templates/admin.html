@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="topbar">
+    <div class="topbar-left">
+      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+    </div>
+    <div class="topbar-fields">
+      <div class="topbar-field"><span>Vista</span><strong>Administrador</strong></div>
+    </div>
+    <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('menu') }}">Men&uacute;</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
+      <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <main class="page page--full">
+    {% if message %}
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">OK</div>
+        <p style="margin:0;color:#374151">{{ message }}</p>
+      </div>
+    {% endif %}
+
+    <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto">
+      <section class="section section--review">
+        <div class="section-title">Crear / actualizar usuario</div>
+        <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Guardando usuario...">
+          <input type="hidden" name="action" value="add" />
+          <label class="field">
+            <span>Usuario</span>
+            <input name="username" autocomplete="username" required />
+          </label>
+          <label class="field">
+            <span>Contrase&ntilde;a</span>
+            <input name="password" type="password" autocomplete="new-password" required />
+          </label>
+          <label class="field">
+            <span>Rol</span>
+            <select name="role">
+              <option value="Revisor">Revisor</option>
+              <option value="Administrador">Administrador</option>
+            </select>
+          </label>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Crear/actualizar</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section section--act">
+        <div class="section-title">Acciones r&aacute;pidas</div>
+        <div class="card" style="padding:14px">
+          <div class="stack">
+            <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Actualizando rol...">
+              <input type="hidden" name="action" value="set_role" />
+              <label class="field">
+                <span>Usuario</span>
+                <input name="username" autocomplete="username" required />
+              </label>
+              <label class="field">
+                <span>Rol</span>
+                <select name="role">
+                  <option value="Revisor">Revisor</option>
+                  <option value="Administrador">Administrador</option>
+                </select>
+              </label>
+              <button class="btn btn-ghost" type="submit">Cambiar rol</button>
+            </form>
+
+            <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Actualizando contrase&ntilde;a...">
+              <input type="hidden" name="action" value="set_password" />
+              <label class="field">
+                <span>Usuario</span>
+                <input name="username" autocomplete="username" required />
+              </label>
+              <label class="field">
+                <span>Nueva contrase&ntilde;a</span>
+                <input name="password" type="password" autocomplete="new-password" required />
+              </label>
+              <button class="btn btn-ghost" type="submit">Cambiar contrase&ntilde;a</button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="section section--mail">
+      <div class="section-title">Usuarios</div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Rol</th>
+            <th>Activo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not users %}
+            <tr><td class="tbl-empty" colspan="3">Sin usuarios (o no se pudo leer Cosmos).</td></tr>
+          {% else %}
+            {% for u in users %}
+              <tr>
+                <td>{{ u.username }}</td>
+                <td>{{ u.role }}</td>
+                <td>{{ "Sí" if u.active == "1" else "No" }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+{% endblock %}

@@ -20,10 +20,19 @@
     if (!modal) return;
     if (modalText) modalText.textContent = message || "";
     const msg = String(message || "");
-    const sessionExpired = /no autenticado|sesion caducada|sesión caducada/i.test(msg);
+    const sessionExpired = /no autenticado|sesion expirada|sesión expirada/i.test(msg);
+    const lockExpired = /bloqueo caducado|registro ya procesado/i.test(msg);
     if (modalRefresh) {
-      modalRefresh.textContent = sessionExpired ? "Iniciar sesi\u00f3n de nuevo" : "Aceptar";
-      modalRefresh.dataset.action = sessionExpired ? "login" : "close";
+      if (sessionExpired) {
+        modalRefresh.textContent = "Iniciar sesi\u00f3n de nuevo";
+        modalRefresh.dataset.action = "login";
+      } else if (lockExpired) {
+        modalRefresh.textContent = "Cargar otro registro";
+        modalRefresh.dataset.action = "refresh";
+      } else {
+        modalRefresh.textContent = "Aceptar";
+        modalRefresh.dataset.action = "close";
+      }
     }
     modal.style.display = "flex";
     modal.setAttribute("aria-hidden", "false");
@@ -123,7 +132,7 @@
     const renderTimer = () => {
       if (!timerEl) return;
       if (lockExpired) {
-        timerEl.textContent = "Sesi\u00f3n caducada";
+        timerEl.textContent = "Bloqueo caducado";
         timerEl.classList.add("topbar-timer--expired");
         timerEl.style.display = "";
         return;
@@ -152,6 +161,7 @@
       hideModal();
       const action = modalRefresh?.dataset?.action || "close";
       if (action === "login") window.location.href = loginUrl;
+      if (action === "refresh") window.location.href = refreshUrl || window.location.href;
     });
 
     if (heartbeatUrl) {
@@ -170,7 +180,14 @@
               inFlight = false;
               lockExpired = true;
               renderTimer();
-              showModal("Sesion caducada (10 min) o registro ya procesado por otro usuario.");
+              showModal("Bloqueo caducado (10 min) o registro ya procesado por otro usuario.");
+              return null;
+            }
+            if (res.status === 401) {
+              inFlight = false;
+              lockExpired = true;
+              renderTimer();
+              showModal("Sesi\u00f3n expirada. Inicia sesi\u00f3n de nuevo.");
               return null;
             }
             if (!res.ok) {

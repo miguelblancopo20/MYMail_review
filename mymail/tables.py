@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from mymail.cosmos import container as cosmos_container
+from mymail.cosmos import cosmos_enabled
 from mymail.cosmos import containers as cosmos_containers
 
 
@@ -161,22 +162,27 @@ def log_click(
     result: str = "",
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
+    if not cosmos_enabled():
+        return
     now = _utcnow()
-    c = _cosmos(_containers().logs)
-    ent: Dict[str, Any] = {
-        "id": uuid.uuid4().hex,
-        "pk": _day(now),
-        "timestamp": now.isoformat(),
-        "day": _day(now),
-        "weekday": _weekday(now),
-        "user": username or "",
-        "action": action,
-        "record_id": record_id or "",
-        "result": result or "",
-    }
-    if extra:
-        ent["extra_json"] = json.dumps(extra, ensure_ascii=False)
-    c.create_item(ent)
+    try:
+        c = _cosmos(_containers().logs)
+        ent: Dict[str, Any] = {
+            "id": uuid.uuid4().hex,
+            "pk": _day(now),
+            "timestamp": now.isoformat(),
+            "day": _day(now),
+            "weekday": _weekday(now),
+            "user": username or "",
+            "action": action,
+            "record_id": record_id or "",
+            "result": result or "",
+        }
+        if extra:
+            ent["extra_json"] = json.dumps(extra, ensure_ascii=False)
+        c.create_item(ent)
+    except Exception:
+        return
 
 
 def write_resultado(

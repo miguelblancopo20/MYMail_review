@@ -9,12 +9,17 @@
       <div class="topbar-field"><span>Vista</span><strong>Listado</strong></div>
     </div>
     <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estadísticas MY</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estadísticas</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Continuar revisando</a>
-      <div class="pill">{{ current_user }}</div>
-      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estad&iacute;sticas MY</a>
+      {% if (session.get("role") or "") == "Administrador" %}
+        <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
+      {% else %}
+        <div class="pill">{{ current_user }}</div>
+      {% endif %}
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
@@ -83,7 +88,7 @@
         <table class="tbl">
           <thead>
             <tr>
-              <th>Fecha revisión</th>
+              <th>Fecha revisiИn</th>
               <th>Revisor</th>
               <th>ID Correo</th>
               <th>Estado</th>
@@ -108,13 +113,13 @@
                         <a class="btn btn-secondary btn-sm" href="{{ url_for('listado_editar', blob=r.get('_blob_name',''), next=request.full_path if request else '') }}">Editar (admin)</a>
                       </div>
                       <div class="section section--review section--compact" style="margin:0; padding:12px">
-                        <div class="section-title" style="margin-bottom:10px">Revisión EY</div>
+                        <div class="section-title" style="margin-bottom:10px">RevisiИn EY</div>
                         <div class="grid-5">
                           <div class="kv kv-vert"><div class="k">Estado</div><div class="v">{{ r.get("status","") }}</div></div>
                           <div class="kv kv-vert"><div class="k">Detalle KO MTM</div><div class="v">{{ r.get("ko_mym_reason","") }}</div></div>
-                          <div class="kv kv-vert"><div class="k">Comentario de revisión</div><div class="v">{{ r.get("reviewer_note","") }}</div></div>
+                          <div class="kv kv-vert"><div class="k">Comentario de revisiИn</div><div class="v">{{ r.get("reviewer_note","") }}</div></div>
                           <div class="kv kv-vert"><div class="k">Nota interna</div><div class="v">{{ r.get("_internal_note_text","") }}</div></div>
-                          <div class="kv kv-vert"><div class="k">Multitemática</div><div class="v">{{ "Sí" if r.get("multitematica") else "No" }}</div></div>
+                          <div class="kv kv-vert"><div class="k">Multitem&aacute;tica</div><div class="v">{{ "S&iacute;" if r.get("multitematica") else "No" }}</div></div>
                         </div>
                       </div>
 
@@ -138,20 +143,20 @@
                       </div>
 
                       <div class="section section--act" style="margin-top:10px; padding:12px">
-                        <div class="section-title" style="margin-bottom:10px">Actuación MY</div>
+                        <div class="section-title" style="margin-bottom:10px">ActuaciÇün MY</div>
                         <div class="grid-3">
-                          <div class="kv kv-vert"><div class="k">Temática</div><div class="v">{{ rec.get("Location","") }}</div></div>
-                          <div class="kv kv-vert"><div class="k">Subtemática</div><div class="v">{{ rec.get("Sublocation","") }}</div></div>
+                          <div class="kv kv-vert"><div class="k">TemÇ­tica</div><div class="v">{{ rec.get("Location","") }}</div></div>
+                          <div class="kv kv-vert"><div class="k">SubtemÇ­tica</div><div class="v">{{ rec.get("Sublocation","") }}</div></div>
                           <div class="kv kv-vert"><div class="k">Automatismo</div><div class="v">{{ rec.get("Automatismo","") }}</div></div>
                         </div>
                         {% if r.get("_act_summary") or r.get("_act_proposal") %}
                           <div class="ia-grid" style="margin-top:10px">
                             <div class="kv kv-vert"><div class="k">Resumen</div><div class="v">{{ r.get("_act_summary","") }}</div></div>
-                            <div class="kv kv-vert"><div class="k">Propuesta de actuación</div><div class="v">{{ r.get("_act_proposal","") }}</div></div>
+                            <div class="kv kv-vert"><div class="k">Propuesta de actuaciÇün</div><div class="v">{{ r.get("_act_proposal","") }}</div></div>
                           </div>
                         {% endif %}
                         {% if r.get("_act_params") %}
-                          <div class="kv kv-vert" style="margin-top:10px"><div class="k">Parámetros</div><div class="v">{{ r.get("_act_params","") }}</div></div>
+                          <div class="kv kv-vert" style="margin-top:10px"><div class="k">ParÇ­metros</div><div class="v">{{ r.get("_act_params","") }}</div></div>
                         {% endif %}
                       </div>
 
@@ -215,7 +220,7 @@
             <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
             <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
           {% endif %}
-          <div class="pill pill-sm">Página {{ page }} / {{ total_pages }}</div>
+          <div class="pill pill-sm">PÇ­gina {{ page }} / {{ total_pages }}</div>
           {% if page < total_pages %}
             <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
             <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
@@ -225,7 +230,7 @@
             <input type="hidden" name="revisor" value="{{ selected_user or '' }}" />
             <input type="hidden" name="estado" value="{{ selected_status or '' }}" />
             <input type="hidden" name="idcorreo" value="{{ selected_id or '' }}" />
-            <select name="per_page" class="select-compact" onchange="this.form.submit()" aria-label="Filas por página">
+            <select name="per_page" class="select-compact" onchange="this.form.submit()" aria-label="Filas por pÇ­gina">
               {% for opt in [10,25,50] %}
                 <option value="{{ opt }}" {% if per_page == opt %}selected{% endif %}>{{ opt }}</option>
               {% endfor %}

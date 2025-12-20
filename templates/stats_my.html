@@ -6,7 +6,7 @@
       <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
     </div>
     <div class="topbar-fields">
-      <div class="topbar-field"><span>Vista</span><strong>Estadísticas MY</strong></div>
+      <div class="topbar-field"><span>Vista</span><strong>Estad&iacute;sticas MY</strong></div>
       <div class="topbar-field">
         <span>Semana (L-D)</span>
         <div class="topbar-control">
@@ -23,12 +23,17 @@
       </div>
     </div>
     <div class="topbar-right">
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estadísticas</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisión</a>
-      <div class="pill">{{ current_user }}</div>
-      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estad&iacute;sticas MY</a>
+      {% if (session.get("role") or "") == "Administrador" %}
+        <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
+      {% else %}
+        <div class="pill">{{ current_user }}</div>
+      {% endif %}
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
@@ -55,7 +60,7 @@
     ></div>
 
     <section class="section section--mail" style="margin-top:0">
-      <div class="section-title">Estadísticas de correos pendientes</div>
+      <div class="section-title">Estad&iacute;sticas de correos pendientes</div>
       <div class="actions" style="justify-content:flex-start; gap:10px; flex-wrap:wrap; margin-top:8px">
         <div class="pill" id="pillPendingTotal">Pendientes: —</div>
         <div class="pill" id="pillPendingLoaded">Cargados: —</div>
@@ -63,7 +68,7 @@
 
       <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto; margin-top:10px">
         <section class="section section--act" style="margin-top:0">
-          <div class="section-title">Pendientes por temática (n y %)</div>
+          <div class="section-title">Pendientes por tem&aacute;tica (n y %)</div>
           <div class="kv-list" id="listPendingByTematica"></div>
         </section>
 

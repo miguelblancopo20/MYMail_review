@@ -19,11 +19,16 @@
       </div>
     </div>
     <div class="topbar-right">
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estadísticas MY</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Continuar revisando</a>
-      <div class="pill">{{ current_user }}</div>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estad&iacute;sticas MY</a>
+      {% if (session.get("role") or "") == "Administrador" %}
+        <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
+      {% else %}
+        <div class="pill">{{ current_user }}</div>
+      {% endif %}
       <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
