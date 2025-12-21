@@ -24,7 +24,7 @@
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estad&iacute;sticas MY</a>
-      {% if (session.get("role") or "") == "Administrador" %}
+      {% if (session.get("role") or "") == "SuperAdmin" %}
         <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
       {% else %}
         <a class="pill pill-link" href="{{ url_for('account') }}">{{ current_user }}</a>

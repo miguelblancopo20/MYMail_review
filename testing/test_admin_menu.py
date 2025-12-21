@@ -23,13 +23,13 @@ class AdminMenuTests(unittest.TestCase):
         with patch.object(
             flask_app,
             "list_users",
-            return_value=[{"username": "u1", "role": "Administrador", "active": "1", "created_at": "2025-12-20T10:00:00Z"}],
+            return_value=[{"username": "admin", "role": "SuperAdmin", "active": "1", "created_at": "2025-12-20T10:00:00Z"}],
         ):
             client = app.test_client()
             with client.session_transaction() as sess:
                 sess["authenticated"] = True
                 sess["user"] = "admin"
-                sess["role"] = "Administrador"
+                sess["role"] = "SuperAdmin"
 
             resp = client.get("/admin")
             self.assertEqual(resp.status_code, 200)

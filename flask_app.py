@@ -24,7 +24,7 @@ from mymail.entrada import list_pending_meta
 from mymail.entrada import list_pending_payloads_for_stats, record_from_payload
 from mymail.state import get_state, reset_state
 from mymail.revisiones import get_revision, list_revisions, save_revision
-from mymail.tables import ROLE_ADMIN, create_user, get_user, list_users, log_click, set_user_last_login, set_user_password, set_user_role, verify_user
+from mymail.tables import ROLE_ADMIN, ROLE_SUPERADMIN, create_user, get_user, list_users, log_click, set_user_last_login, set_user_password, set_user_role, verify_user
 from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
 
@@ -86,6 +86,9 @@ def create_app() -> Flask:
         if fwd:
             return fwd.split(",")[0].strip()
         return str(request.remote_addr or "unknown")
+
+    def _is_admin_role(role: str) -> bool:
+        return role in {ROLE_ADMIN, ROLE_SUPERADMIN}
 
     def _get_csrf_token() -> str:
         token = session.get("_csrf_token")
@@ -292,7 +295,7 @@ def create_app() -> Flask:
     def menu():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        can_stats = (session.get("role") or "") == ROLE_ADMIN
+        can_stats = _is_admin_role(session.get("role") or "")
         return render_template(
             "menu.html",
             title="Menú",
@@ -378,7 +381,7 @@ def create_app() -> Flask:
         if not session.get("authenticated"):
             return redirect(url_for("login"))
         msg = (request.args.get("msg") or "").strip()
-        is_admin = (session.get("role") or "") == ROLE_ADMIN
+        is_admin = (session.get("role") or "") == ROLE_SUPERADMIN
         return render_template(
             "account.html",
             title="Mi cuenta",
@@ -440,7 +443,7 @@ def create_app() -> Flask:
     def admin_menu():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if (session.get("role") or "") != ROLE_SUPERADMIN:
             session["_error"] = "No autorizado: solo Administrador puede gestionar usuarios."
             return redirect(url_for("menu"))
 
@@ -462,7 +465,7 @@ def create_app() -> Flask:
     def admin_users_post():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if (session.get("role") or "") != ROLE_SUPERADMIN:
             session["_error"] = "No autorizado: solo Administrador puede gestionar usuarios."
             return redirect(url_for("menu"))
 
@@ -621,8 +624,8 @@ def create_app() -> Flask:
             act_items=act_items,
             pending=state.pending_count(),
             current_user=session.get("user", ""),
-            can_stats=(session.get("role") or "") == ROLE_ADMIN,
-            can_ai=version_at_least(app_version, "1.0.0") and (session.get("role") or "") == ROLE_ADMIN,
+            can_stats=_is_admin_role(session.get("role") or ""),
+            can_ai=version_at_least(app_version, "1.0.0") and _is_admin_role(session.get("role") or ""),
             app_version=app_version,
             title="Revisor de Mayordomo Mail",
             error=error,
@@ -636,7 +639,7 @@ def create_app() -> Flask:
         if not version_at_least(app_version, "1.0.0"):
             return jsonify({"ok": False, "error": "Funcionalidad no disponible para esta versión."}), 404
 
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             return jsonify({"ok": False, "error": "No autorizado: solo Administrador."}), 403
 
         state = get_state()
@@ -825,7 +828,7 @@ def create_app() -> Flask:
             current_user=session.get("user", ""),
             app_version=app_version,
             error=session.pop("_error", None),
-            can_stats=(session.get("role") or "") == ROLE_ADMIN,
+            can_stats=_is_admin_role(session.get("role") or ""),
             selected_id=selected_id,
             selected_tematica=selected_tematica,
             selected_subtematica=selected_subtematica,
@@ -878,7 +881,7 @@ def create_app() -> Flask:
     def stats():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             session["_error"] = "No autorizado: solo Administrador puede ver Estadisticas."
             return redirect(url_for("review"))
 
@@ -918,7 +921,7 @@ def create_app() -> Flask:
     def stats_my():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             session["_error"] = "No autorizado: solo Administrador puede ver Estadísticas MY."
             return redirect(url_for("review"))
 
@@ -972,7 +975,7 @@ def create_app() -> Flask:
     def api_stats_revisiones():
         if not session.get("authenticated"):
             return jsonify({"ok": False, "error": "No autenticado."}), 401
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             return jsonify({"ok": False, "error": "No autorizado."}), 403
 
         days = 14
@@ -1051,7 +1054,7 @@ def create_app() -> Flask:
     def api_stats_pendientes():
         if not session.get("authenticated"):
             return jsonify({"ok": False, "error": "No autenticado."}), 401
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             return jsonify({"ok": False, "error": "No autorizado."}), 403
 
         week_start = (request.args.get("week_start") or "").strip()
@@ -1190,7 +1193,7 @@ def create_app() -> Flask:
     def listado():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             session["_error"] = "No autorizado: solo Administrador puede ver Estadisticas."
             return redirect(url_for("review"))
 
@@ -1507,7 +1510,7 @@ def create_app() -> Flask:
     def listado_download():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             session["_error"] = "No autorizado: solo Administrador puede ver Estadisticas."
             return redirect(url_for("review"))
 
@@ -1605,7 +1608,7 @@ def create_app() -> Flask:
     def listado_editar():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             session["_error"] = "No autorizado: solo Administrador puede editar revisiones."
             return redirect(url_for("review"))
 
@@ -1718,7 +1721,7 @@ def create_app() -> Flask:
     def listado_editar_post():
         if not session.get("authenticated"):
             return redirect(url_for("login"))
-        if (session.get("role") or "") != ROLE_ADMIN:
+        if not _is_admin_role(session.get("role") or ""):
             session["_error"] = "No autorizado: solo Administrador puede editar revisiones."
             return redirect(url_for("review"))
 

@@ -66,7 +66,6 @@ def save_revision(blob_name: str, payload: Dict[str, Any]) -> None:
     c.replace_item(
         item=id_,
         body=doc,
-        partition_key=pk,
         etag=etag,
         match_condition=MatchConditions.IfNotModified,
     )

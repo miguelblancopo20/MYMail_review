@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mymail.tables import ROLE_ADMIN, ROLE_REVISOR, create_user, list_users, set_user_password, set_user_role
+from mymail.tables import ROLE_ADMIN, ROLE_REVISOR, ROLE_SUPERADMIN, create_user, list_users, set_user_password, set_user_role
 
 
 def main(argv: list[str]) -> int:
@@ -18,11 +18,11 @@ def main(argv: list[str]) -> int:
     add = sub.add_parser("add", help="Crear/actualizar usuario")
     add.add_argument("--username", required=True)
     add.add_argument("--password", required=True)
-    add.add_argument("--role", default=ROLE_REVISOR, choices=[ROLE_REVISOR, ROLE_ADMIN])
+    add.add_argument("--role", default=ROLE_REVISOR, choices=[ROLE_REVISOR, ROLE_ADMIN, ROLE_SUPERADMIN])
 
     setrole = sub.add_parser("set-role", help="Cambiar rol a un usuario")
     setrole.add_argument("--username", required=True)
-    setrole.add_argument("--role", required=True, choices=[ROLE_REVISOR, ROLE_ADMIN])
+    setrole.add_argument("--role", required=True, choices=[ROLE_REVISOR, ROLE_ADMIN, ROLE_SUPERADMIN])
 
     setpwd = sub.add_parser("set-password", help="Actualizar contraseña de un usuario")
     setpwd.add_argument("--username", required=True)

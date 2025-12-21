@@ -10,7 +10,7 @@
         <div class="topbar-field"><span>Vista</span><strong>Menú</strong></div>
       </div>
       <div class="topbar-right">
-        {% if (session.get("role") or "") == "Administrador" %}
+        {% if (session.get("role") or "") == "SuperAdmin" %}
           <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
         {% else %}
           <a class="pill pill-link" href="{{ url_for('account') }}">{{ current_user }}</a>

@@ -42,6 +42,7 @@ class AuthResult:
 
 ROLE_REVISOR = "Revisor"
 ROLE_ADMIN = "Administrador"
+ROLE_SUPERADMIN = "SuperAdmin"
 
 
 def normalize_role(role: str) -> str:
@@ -50,6 +51,8 @@ def normalize_role(role: str) -> str:
         return ROLE_REVISOR
     if role.lower() in {"admin", "administrador", "administrator"}:
         return ROLE_ADMIN
+    if role.lower() in {"superadmin", "super-admin", "super administrador", "superadministrador"}:
+        return ROLE_SUPERADMIN
     if role.lower() in {"revisor", "reviewer"}:
         return ROLE_REVISOR
     return ROLE_REVISOR
@@ -65,6 +68,8 @@ def create_user(username: str, password: str, *, role: str = ROLE_REVISOR) -> No
     now = _utcnow()
     role = normalize_role(role)
     if username.lower() == "admin":
+        role = ROLE_SUPERADMIN
+    elif role == ROLE_SUPERADMIN:
         role = ROLE_ADMIN
     c = _cosmos(_containers().users)
     created_at = now.isoformat()
@@ -94,6 +99,8 @@ def set_user_role(username: str, role: str) -> None:
         raise ValueError("username vac︽")
     role = normalize_role(role)
     if username.lower() == "admin":
+        role = ROLE_SUPERADMIN
+    elif role == ROLE_SUPERADMIN:
         role = ROLE_ADMIN
     c = _cosmos(_containers().users)
     c.upsert_item({"id": username, "pk": "users", "role": role})
@@ -201,7 +208,7 @@ def verify_user(username: str, password: str) -> AuthResult:
 
     role = normalize_role(str(entity.get("role", "") or ROLE_REVISOR))
     if username.lower() == "admin":
-        role = ROLE_ADMIN
+        role = ROLE_SUPERADMIN
     return AuthResult(True, "", role=role)
 
 
