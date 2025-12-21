@@ -68,11 +68,12 @@ class AdminMenuTests(unittest.TestCase):
             sess["authenticated"] = True
             sess["user"] = "admin"
             sess["role"] = "Administrador"
+            sess["_csrf_token"] = "tok"
 
         with patch.object(flask_app, "set_user_password") as sp, patch.object(flask_app, "set_user_role") as sr:
             resp = client.post(
                 "/admin/users",
-                data={"action": "set_password", "username": "u2", "password": "newpass123"},
+                data={"action": "set_password", "username": "u2", "password": "newpass123", "csrf_token": "tok"},
                 follow_redirects=False,
             )
             self.assertEqual(resp.status_code, 302)
@@ -94,6 +95,7 @@ class AccountPasswordTests(unittest.TestCase):
             sess["authenticated"] = True
             sess["user"] = "u1"
             sess["role"] = "Revisor"
+            sess["_csrf_token"] = "tok"
 
         class Ok:
             ok = True
@@ -102,7 +104,12 @@ class AccountPasswordTests(unittest.TestCase):
         with patch.object(flask_app, "verify_user", return_value=Ok()), patch.object(flask_app, "set_user_password") as sp:
             resp = client.post(
                 "/account/password",
-                data={"current_password": "old", "new_password": "newpass123", "confirm_password": "newpass123"},
+                data={
+                    "current_password": "old",
+                    "new_password": "newpass123",
+                    "confirm_password": "newpass123",
+                    "csrf_token": "tok",
+                },
                 follow_redirects=False,
             )
             self.assertEqual(resp.status_code, 302)

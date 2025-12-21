@@ -64,8 +64,12 @@
         <div class="stat-v" id="statTotalDescartes">{{ total_descartes }}</div>
       </div>
       <div class="card stat">
-        <div class="stat-k">KO% (sobre revisiones)</div>
-        <div class="stat-v" id="statKoRate">{{ ko_rate }}</div>
+        <div class="stat-k">%KO Agente</div>
+        <div class="stat-v" id="statKoAgentRate">{{ ko_agent_rate }}</div>
+      </div>
+      <div class="card stat">
+        <div class="stat-k">%KO MY</div>
+        <div class="stat-v" id="statKoMyRate">{{ ko_my_rate }}</div>
       </div>
       <div class="card stat">
         <div class="stat-k">DUDA</div>
@@ -155,7 +159,8 @@
             const d1 = j1.data || {};
             setText("statTotalRevisiones", d1.total_resultados ?? 0);
             setText("statTotalDescartes", d1.total_descartes ?? 0);
-            setText("statKoRate", d1.ko_rate ?? "0%");
+            setText("statKoAgentRate", d1.ko_agent_rate ?? "0%");
+            setText("statKoMyRate", d1.ko_my_rate ?? "0%");
             setText("statDuda", d1.duda_count ?? 0);
             fillList3("listByStatus", d1.by_status || []);
             fillList3("listTopAutomatismos", d1.top_automatismos || []);

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -22,7 +24,7 @@ from mymail.entrada import list_pending_meta
 from mymail.entrada import list_pending_payloads_for_stats, record_from_payload
 from mymail.state import get_state, reset_state
 from mymail.revisiones import get_revision, list_revisions, save_revision
-from mymail.tables import ROLE_ADMIN, create_user, get_user, list_users, log_click, set_user_password, set_user_role, verify_user
+from mymail.tables import ROLE_ADMIN, create_user, get_user, list_users, log_click, set_user_last_login, set_user_password, set_user_role, verify_user
 from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
 
@@ -30,6 +32,12 @@ from mymail.tables import write_descarte, write_resultado
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
     app_version = (getattr(config, "APP_VERSION", "") or "").strip() or "0.0.0"
+    cookie_secure = str(os.environ.get("FLASK_COOKIE_SECURE", "") or "").strip().lower() in {"1", "true", "yes"}
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=cookie_secure,
+    )
     app.secret_key = (
         (getattr(config, "FLASK_SECRET_KEY", "") or "").strip()
         or (os.environ.get("FLASK_SECRET_KEY", "") or "").strip()
@@ -58,6 +66,58 @@ def create_app() -> Flask:
             log_click(action="page_view", username=username, record_id=request.path, result="ok", extra={"endpoint": endpoint})
         except Exception:
             return
+
+    _RATE_LIMIT: dict[str, list[float]] = {}
+
+    def _rate_limit(key: str, *, limit: int, window_s: int) -> tuple[bool, int]:
+        now = time.time()
+        window_start = now - float(window_s)
+        hits = [ts for ts in _RATE_LIMIT.get(key, []) if ts >= window_start]
+        if len(hits) >= limit:
+            retry_after = max(0, int(hits[0] + window_s - now))
+            _RATE_LIMIT[key] = hits
+            return False, retry_after
+        hits.append(now)
+        _RATE_LIMIT[key] = hits
+        return True, 0
+
+    def _client_ip() -> str:
+        fwd = str(request.headers.get("X-Forwarded-For", "") or "")
+        if fwd:
+            return fwd.split(",")[0].strip()
+        return str(request.remote_addr or "unknown")
+
+    def _get_csrf_token() -> str:
+        token = session.get("_csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["_csrf_token"] = token
+        return token
+
+    @app.context_processor
+    def inject_csrf_token():
+        return {"csrf_token": _get_csrf_token()}
+
+    @app.before_request
+    def _verify_csrf():
+        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        if request.path.startswith("/static"):
+            return None
+        token = session.get("_csrf_token") or ""
+        sent = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token") or ""
+        if token and sent and secrets.compare_digest(str(token), str(sent)):
+            return None
+        if request.path == "/login":
+            return render_template(
+                "login.html",
+                error="Sesión no válida. Recarga e inténtalo de nuevo.",
+                title="Revisor de Mayordomo Mail",
+                app_version=app_version,
+            )
+        if (request.headers.get("X-Requested-With") or "").lower() == "fetch":
+            return jsonify({"ok": False, "error": "CSRF inválido."}), 400
+        return ("CSRF inválido.", 400)
 
     def normalize_multiline(value: str) -> str:
         if not value:
@@ -253,6 +313,16 @@ def create_app() -> Flask:
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
 
+        key = f"login:{_client_ip()}:{username.lower()}"
+        allowed, retry_after = _rate_limit(key, limit=8, window_s=300)
+        if not allowed:
+            return render_template(
+                "login.html",
+                error=f"Demasiados intentos. Espera {retry_after}s y vuelve a intentarlo.",
+                title="Revisor de Mayordomo Mail",
+                app_version=app_version,
+            )
+
         auth = verify_user(username, password)
         if auth.ok:
             reset_state()
@@ -260,6 +330,7 @@ def create_app() -> Flask:
             session["authenticated"] = True
             session["user"] = username
             session["role"] = auth.role or ""
+            set_user_last_login(username)
             log_click(action="login", username=username, result="ok")
             try:
                 cleared = clear_expired_locks()
@@ -325,6 +396,12 @@ def create_app() -> Flask:
         username = session.get("user", "") or ""
         if not username:
             return redirect(url_for("login"))
+
+        key = f"pwd:{_client_ip()}:{username.lower()}"
+        allowed, retry_after = _rate_limit(key, limit=5, window_s=600)
+        if not allowed:
+            session["_error"] = f"Demasiados intentos. Espera {retry_after}s y vuelve a intentarlo."
+            return redirect(url_for("account"))
 
         current_password = request.form.get("current_password") or ""
         new_password = request.form.get("new_password") or ""
@@ -392,6 +469,12 @@ def create_app() -> Flask:
         action_type = (request.form.get("action") or "").strip()
         username = (request.form.get("username") or "").strip()
         caller = session.get("user", "") or ""
+
+        key = f"admin:{_client_ip()}:{caller.lower()}"
+        allowed, retry_after = _rate_limit(key, limit=12, window_s=600)
+        if not allowed:
+            session["_error"] = f"Demasiados cambios seguidos. Espera {retry_after}s y vuelve a intentarlo."
+            return redirect(url_for("admin_menu"))
 
         try:
             if action_type == "add":
@@ -814,7 +897,8 @@ def create_app() -> Flask:
             days=days,
             total_resultados=0,
             total_descartes=0,
-            ko_rate="—",
+            ko_agent_rate="—",
+            ko_my_rate="—",
             duda_count=0,
             by_status=[],
             by_user=[],
@@ -943,14 +1027,17 @@ def create_app() -> Flask:
         by_status = with_pct(by_status_raw, total=total_resultados)[:10]
         top_automatismos = with_pct(top_automatismos_raw, total=total_resultados)
 
-        ko_count = sum(v for k, v in by_status_raw if k.startswith("KO"))
+        ko_agent_count = sum(v for k, v in by_status_raw if k == "KO AGENTE")
+        ko_my_count = sum(v for k, v in by_status_raw if k == "KO MYM")
         duda_count = sum(v for k, v in by_status_raw if k == "DUDA")
-        ko_rate = f"{round((ko_count / total_resultados) * 100)}%" if total_resultados else "0%"
+        ko_agent_rate = f"{round((ko_agent_count / total_resultados) * 100)}%" if total_resultados else "0%"
+        ko_my_rate = f"{round((ko_my_count / total_resultados) * 100)}%" if total_resultados else "0%"
 
         data = {
             "total_resultados": total_resultados,
             "total_descartes": total_descartes,
-            "ko_rate": ko_rate,
+            "ko_agent_rate": ko_agent_rate,
+            "ko_my_rate": ko_my_rate,
             "duda_count": duda_count,
             "by_status": by_status,
             "top_automatismos": top_automatismos,

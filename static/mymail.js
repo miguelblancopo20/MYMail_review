@@ -56,6 +56,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     if (!keepOverlay()) hide();
     const pageStartMs = Date.now();
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 
     document.querySelectorAll("[data-password-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -186,7 +187,7 @@
         if (now - lastSentMs < 60_000) return;
         lastSentMs = now;
         inFlight = true;
-        fetch(heartbeatUrl, { method: "POST", headers: { "X-Requested-With": "fetch" } })
+        fetch(heartbeatUrl, { method: "POST", headers: { "X-Requested-With": "fetch", "X-CSRF-Token": csrfToken } })
           .then((res) => {
             if (res.status === 409) {
               inFlight = false;
@@ -238,7 +239,7 @@
       if (!url) return;
       if (aiTematicaResult) aiTematicaResult.textContent = "";
       show("Consultando IA...");
-      fetch(url, { method: "POST", headers: { "X-Requested-With": "fetch" } })
+      fetch(url, { method: "POST", headers: { "X-Requested-With": "fetch", "X-CSRF-Token": csrfToken } })
         .then((res) => res.json().then((j) => ({ status: res.status, json: j })))
         .then(({ status, json }) => {
           hide();

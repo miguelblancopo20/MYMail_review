@@ -156,6 +156,7 @@
           <div class="section-title">Revisión EY</div>
 
           <form method="post" action="{{ form_action or url_for('action') }}" class="stack" data-overlay data-edit-mode="{{ 1 if edit_mode else 0 }}" id="reviewForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             {% if edit_mode %}
               <input type="hidden" name="edit_blob" value="{{ edit_blob or '' }}" />
               <input type="hidden" name="edit_original_user" value="{{ edit_original_user or '' }}" />

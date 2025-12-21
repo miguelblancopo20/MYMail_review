@@ -44,6 +44,7 @@
       <section class="section section--review">
         <div class="section-title">Crear / actualizar usuario</div>
         <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Guardando usuario...">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <input type="hidden" name="action" value="add" />
           <label class="field">
             <span>Usuario</span>
@@ -75,6 +76,7 @@
         <div class="card" style="padding:14px">
           <div class="stack">
             <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Actualizando rol...">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
               <input type="hidden" name="action" value="set_role" />
               <label class="field">
                 <span>Usuario</span>
@@ -91,6 +93,7 @@
             </form>
 
             <form method="post" action="{{ url_for('account_password') }}" class="stack" data-overlay data-overlay-message="Actualizando contraseña...">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
               <label class="field">
                 <span>Contrase&ntilde;a actual</span>
                 <div class="password-row" data-password-wrap>

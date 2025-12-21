@@ -10,6 +10,7 @@
       <div class="card">
         <div class="card-title">Inicio de sesión</div>
         <form method="post" class="stack" data-overlay data-overlay-message="Validando credenciales...">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <label class="field">
             <span>Usuario</span>
             <input name="username" autocomplete="username" />

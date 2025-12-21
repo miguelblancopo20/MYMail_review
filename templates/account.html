@@ -45,6 +45,7 @@
       <section class="section section--review">
         <div class="section-title">Cambiar contraseña</div>
         <form method="post" action="{{ url_for('account_password') }}" class="stack" data-overlay data-overlay-message="Actualizando contraseña...">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <label class="field">
             <span>Contrase&ntilde;a actual</span>
             <div class="password-row" data-password-wrap>
@@ -74,4 +75,3 @@
     </div>
   </main>
 {% endblock %}
-

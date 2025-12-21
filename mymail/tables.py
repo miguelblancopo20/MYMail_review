@@ -155,6 +155,21 @@ def get_user(username: str) -> dict[str, Any] | None:
         return None
 
 
+def set_user_last_login(username: str) -> None:
+    username = (username or "").strip()
+    if not username or not cosmos_enabled():
+        return
+    try:
+        c = _cosmos(_containers().users)
+        ent = c.read_item(item=username, partition_key="users")
+        if not isinstance(ent, dict):
+            return
+        ent["last_login_at"] = _utcnow().isoformat()
+        c.upsert_item(ent)
+    except Exception:
+        return
+
+
 def verify_user(username: str, password: str) -> AuthResult:
     username = (username or "").strip()
     if not username or not password:

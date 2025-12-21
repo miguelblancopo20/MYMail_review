@@ -28,6 +28,13 @@ python scripts/manage_users.py add --username <user> --password <pass>
 python flask_app.py
 ```
 
+## Seguridad
+
+- CSRF: todos los formularios y peticiones POST llevan token CSRF.
+- Cookies de sesi\u00f3n: `SESSION_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE=Lax`, `SESSION_COOKIE_SECURE` (controlado por `FLASK_COOKIE_SECURE=1`).
+- Rate limiting: l\u00edmite b\u00e1sico para login, cambio de contrase\u00f1a y operaciones admin (memoria local).
+- Logs: se registran accesos a pantallas (GET) y acciones relevantes en Cosmos (`logs`).
+
 ## Persistencia
 
 - Contenedor `entrada`: correos pendientes (con locks de revisión).
@@ -59,4 +66,3 @@ docker push <ACR_NAME>.azurecr.io/mymail-review:latest
   - `COSMOS_KEY=...`
   - `FLASK_SECRET_KEY=...`
   - (opcional) `APP_VERSION=...`
-
