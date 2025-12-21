@@ -328,12 +328,16 @@ def create_app() -> Flask:
 
     @app.post("/login")
     def login_post():
+        start_ms = time.monotonic()
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
 
         key = f"login:{_client_ip()}:{username.lower()}"
         allowed, retry_after = _rate_limit(key, limit=8, window_s=300)
         if not allowed:
+            elapsed_ms = (time.monotonic() - start_ms) * 1000
+            if elapsed_ms < 600:
+                time.sleep((600 - elapsed_ms) / 1000)
             return render_template(
                 "login.html",
                 error=f"Demasiados intentos. Espera {retry_after}s y vuelve a intentarlo.",
@@ -359,6 +363,9 @@ def create_app() -> Flask:
             return redirect(url_for("menu"))
 
         log_click(action="login", username=username, result=f"fail:{auth.reason}")
+        elapsed_ms = (time.monotonic() - start_ms) * 1000
+        if elapsed_ms < 600:
+            time.sleep((600 - elapsed_ms) / 1000)
         if auth.reason in {"cosmos_disabled", "cosmos_client_missing", "cosmos_error"}:
             return render_template(
                 "login.html",
@@ -498,29 +505,35 @@ def create_app() -> Flask:
             return redirect(url_for("admin_menu"))
 
         try:
-            if action_type == "add":
+            if action_type in {"add", "create"}:
                 password = request.form.get("password") or ""
                 role = (request.form.get("role") or "").strip() or "Revisor"
                 existing = get_user(username)
-                if existing is None:
-                    if not password:
-                        raise RuntimeError("Para crear un usuario nuevo, la contraseña es obligatoria.")
-                    pwd_errors = _password_errors(password)
-                    if pwd_errors:
-                        raise RuntimeError("La contraseña debe tener: " + ", ".join(pwd_errors) + ".")
-                    if not email:
-                        raise RuntimeError("El correo es obligatorio.")
-                    create_user(username=username, password=password, role=role, email=email)
-                    log_click(action="admin_user_add", username=caller, record_id=username, result="ok")
-                    return redirect(url_for("admin_menu", msg=f"Usuario '{username}' creado."))
-
-                set_user_role(username=username, role=role)
+                if existing is not None:
+                    raise RuntimeError("El usuario ya existe. Usa 'Modificar usuario'.")
+                if not password:
+                    raise RuntimeError("Para crear un usuario nuevo, la contraseña es obligatoria.")
+                pwd_errors = _password_errors(password)
+                if pwd_errors:
+                    raise RuntimeError("La contraseña debe tener: " + ", ".join(pwd_errors) + ".")
                 if not email:
                     raise RuntimeError("El correo es obligatorio.")
+                create_user(username=username, password=password, role=role, email=email)
+                log_click(action="admin_user_add", username=caller, record_id=username, result="ok")
+                return redirect(url_for("admin_menu", msg=f"Usuario '{username}' creado."))
+
+            if action_type == "update":
+                role = (request.form.get("role") or "").strip() or "Revisor"
+                existing = get_user(username)
+                if existing is None:
+                    raise RuntimeError("El usuario no existe.")
+                if not email:
+                    raise RuntimeError("El correo es obligatorio.")
+                set_user_role(username=username, role=role)
                 set_user_email(username=username, email=email)
-                if password and username != caller:
-                    raise RuntimeError("No puedes cambiar la contraseña de otro usuario.")
-                if password and username == caller:
+                if password:
+                    if username != caller:
+                        raise RuntimeError("No puedes cambiar la contraseña de otro usuario.")
                     pwd_errors = _password_errors(password)
                     if pwd_errors:
                         raise RuntimeError("La contraseña debe tener: " + ", ".join(pwd_errors) + ".")

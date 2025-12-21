@@ -11,10 +11,11 @@
       <div class="topbar-field"><span>Vista</span><strong>Administrador</strong></div>
     </div>
     <div class="topbar-right">
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('menu') }}">Men&uacute;</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estad&iacute;sticas MY</a>
       <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
       <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -43,10 +44,10 @@
 
     <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto">
       <section class="section section--review">
-        <div class="section-title">Crear / actualizar usuario</div>
-        <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Guardando usuario...">
+        <div class="section-title">Crear usuario</div>
+        <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Creando usuario...">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-          <input type="hidden" name="action" value="add" />
+          <input type="hidden" name="action" value="create" />
           <label class="field">
             <span>Usuario</span>
             <input name="username" autocomplete="username" required />
@@ -58,10 +59,9 @@
           <label class="field">
             <span>Contrase&ntilde;a</span>
             <div class="password-row" data-password-wrap>
-              <input name="password" type="password" autocomplete="new-password" />
+              <input name="password" type="password" autocomplete="new-password" required />
               <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
             </div>
-            <div style="font-size:12px;color:var(--muted)">Solo necesaria al crear usuario nuevo o para cambiar tu propia contraseña.</div>
           </label>
           <label class="field">
             <span>Rol</span>
@@ -71,7 +71,40 @@
             </select>
           </label>
           <div class="actions">
-            <button class="btn btn-primary" type="submit">Crear/actualizar</button>
+            <button class="btn btn-primary" type="submit">Crear</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section section--act">
+        <div class="section-title">Modificar usuario</div>
+        <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Actualizando usuario...">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="action" value="update" />
+          <label class="field">
+            <span>Usuario</span>
+            <input name="username" autocomplete="username" required />
+          </label>
+          <label class="field">
+            <span>Correo</span>
+            <input name="email" type="email" autocomplete="email" required />
+          </label>
+          <label class="field">
+            <span>Rol</span>
+            <select name="role">
+              <option value="Revisor">Revisor</option>
+              <option value="Administrador">Administrador</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Nueva contrase&ntilde;a (solo tu usuario)</span>
+            <div class="password-row" data-password-wrap>
+              <input name="password" type="password" autocomplete="new-password" />
+              <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
+            </div>
+          </label>
+          <div class="actions">
+            <button class="btn btn-ghost" type="submit">Actualizar</button>
           </div>
         </form>
       </section>
