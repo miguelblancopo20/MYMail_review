@@ -2,8 +2,10 @@
 {% block body %}
   <header class="topbar">
     <div class="topbar-left">
-      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
-      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+      <a class="topbar-brand" href="{{ url_for('menu') }}">
+        <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+        <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+      </a>
     </div>
     <div class="topbar-fields">
       <div class="topbar-field"><span>Vista</span><strong>Administrador</strong></div>
@@ -13,7 +15,6 @@
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
-      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('account') }}">Mi cuenta</a>
       <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
       <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -51,6 +52,10 @@
             <input name="username" autocomplete="username" required />
           </label>
           <label class="field">
+            <span>Correo</span>
+            <input name="email" type="email" autocomplete="email" required />
+          </label>
+          <label class="field">
             <span>Contrase&ntilde;a</span>
             <div class="password-row" data-password-wrap>
               <input name="password" type="password" autocomplete="new-password" />
@@ -71,55 +76,6 @@
         </form>
       </section>
 
-      <section class="section section--act">
-        <div class="section-title">Acciones r&aacute;pidas</div>
-        <div class="card" style="padding:14px">
-          <div class="stack">
-            <form method="post" action="{{ url_for('admin_users_post') }}" class="stack" data-overlay data-overlay-message="Actualizando rol...">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-              <input type="hidden" name="action" value="set_role" />
-              <label class="field">
-                <span>Usuario</span>
-                <input name="username" autocomplete="username" required />
-              </label>
-              <label class="field">
-                <span>Rol</span>
-                <select name="role">
-                  <option value="Revisor">Revisor</option>
-                  <option value="Administrador">Administrador</option>
-                </select>
-              </label>
-              <button class="btn btn-ghost" type="submit">Cambiar rol</button>
-            </form>
-
-            <form method="post" action="{{ url_for('account_password') }}" class="stack" data-overlay data-overlay-message="Actualizando contraseña...">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-              <label class="field">
-                <span>Contrase&ntilde;a actual</span>
-                <div class="password-row" data-password-wrap>
-                  <input name="current_password" type="password" autocomplete="current-password" required />
-                  <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
-                </div>
-              </label>
-              <label class="field">
-                <span>Nueva contrase&ntilde;a</span>
-                <div class="password-row" data-password-wrap>
-                  <input name="new_password" type="password" autocomplete="new-password" required />
-                  <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
-                </div>
-              </label>
-              <label class="field">
-                <span>Confirmar nueva contrase&ntilde;a</span>
-                <div class="password-row" data-password-wrap>
-                  <input name="confirm_password" type="password" autocomplete="new-password" required />
-                  <button type="button" class="btn btn-sm btn-ghost" data-password-toggle>Mostrar</button>
-                </div>
-              </label>
-              <button class="btn btn-ghost" type="submit">Cambiar mi contrase&ntilde;a</button>
-            </form>
-          </div>
-        </div>
-      </section>
     </div>
 
     <section class="section section--mail">
@@ -128,20 +84,24 @@
         <thead>
           <tr>
             <th>Usuario</th>
+            <th>Correo</th>
             <th>Rol</th>
             <th>Alta</th>
+            <th>Último login</th>
             <th>Activo</th>
           </tr>
         </thead>
         <tbody>
           {% if not users %}
-            <tr><td class="tbl-empty" colspan="4">Sin usuarios (o no se pudo leer Cosmos).</td></tr>
+            <tr><td class="tbl-empty" colspan="6">Sin usuarios (o no se pudo leer Cosmos).</td></tr>
           {% else %}
             {% for u in users %}
               <tr>
                 <td>{{ u.username }}</td>
+                <td>{{ u.email or "-" }}</td>
                 <td>{{ u.role }}</td>
                 <td>{{ u.created_at or "-" }}</td>
+                <td>{{ u.last_login_at or "-" }}</td>
                 <td>{{ "Sí" if u.active == "1" else "No" }}</td>
               </tr>
             {% endfor %}

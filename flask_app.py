@@ -24,7 +24,7 @@ from mymail.entrada import list_pending_meta
 from mymail.entrada import list_pending_payloads_for_stats, record_from_payload
 from mymail.state import get_state, reset_state
 from mymail.revisiones import get_revision, list_revisions, save_revision
-from mymail.tables import ROLE_ADMIN, ROLE_SUPERADMIN, create_user, get_user, list_users, log_click, set_user_last_login, set_user_password, set_user_role, verify_user
+from mymail.tables import ROLE_ADMIN, ROLE_SUPERADMIN, create_user, get_user, list_users, log_click, set_user_email, set_user_last_login, set_user_password, set_user_role, verify_user
 from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
 
@@ -89,6 +89,21 @@ def create_app() -> Flask:
 
     def _is_admin_role(role: str) -> bool:
         return role in {ROLE_ADMIN, ROLE_SUPERADMIN}
+
+    def _password_errors(password: str) -> list[str]:
+        pwd = password or ""
+        errors = []
+        if len(pwd) < 12:
+            errors.append("mínimo 12 caracteres")
+        if not re.search(r"[A-Z]", pwd):
+            errors.append("una mayúscula")
+        if not re.search(r"[a-z]", pwd):
+            errors.append("una minúscula")
+        if not re.search(r"[0-9]", pwd):
+            errors.append("un número")
+        if not re.search(r"[^A-Za-z0-9]", pwd):
+            errors.append("un símbolo")
+        return errors
 
     def _get_csrf_token() -> str:
         token = session.get("_csrf_token")
@@ -415,8 +430,9 @@ def create_app() -> Flask:
         if new_password != confirm_password:
             session["_error"] = "La confirmación no coincide."
             return redirect(url_for("account"))
-        if len(new_password) < 6:
-            session["_error"] = "La nueva contraseña debe tener al menos 6 caracteres."
+        pwd_errors = _password_errors(new_password)
+        if pwd_errors:
+            session["_error"] = "La nueva contraseña debe tener: " + ", ".join(pwd_errors) + "."
             return redirect(url_for("account"))
 
         auth = verify_user(username, current_password)
@@ -451,6 +467,7 @@ def create_app() -> Flask:
         users = list_users()
         for u in users:
             u["created_at"] = format_ts_madrid(str(u.get("created_at", "") or ""))
+            u["last_login_at"] = format_ts_madrid(str(u.get("last_login_at", "") or ""))
         return render_template(
             "admin.html",
             title="Administrador",
@@ -471,6 +488,7 @@ def create_app() -> Flask:
 
         action_type = (request.form.get("action") or "").strip()
         username = (request.form.get("username") or "").strip()
+        email = (request.form.get("email") or "").strip()
         caller = session.get("user", "") or ""
 
         key = f"admin:{_client_ip()}:{caller.lower()}"
@@ -487,14 +505,25 @@ def create_app() -> Flask:
                 if existing is None:
                     if not password:
                         raise RuntimeError("Para crear un usuario nuevo, la contraseña es obligatoria.")
-                    create_user(username=username, password=password, role=role)
+                    pwd_errors = _password_errors(password)
+                    if pwd_errors:
+                        raise RuntimeError("La contraseña debe tener: " + ", ".join(pwd_errors) + ".")
+                    if not email:
+                        raise RuntimeError("El correo es obligatorio.")
+                    create_user(username=username, password=password, role=role, email=email)
                     log_click(action="admin_user_add", username=caller, record_id=username, result="ok")
                     return redirect(url_for("admin_menu", msg=f"Usuario '{username}' creado."))
 
                 set_user_role(username=username, role=role)
+                if not email:
+                    raise RuntimeError("El correo es obligatorio.")
+                set_user_email(username=username, email=email)
                 if password and username != caller:
                     raise RuntimeError("No puedes cambiar la contraseña de otro usuario.")
                 if password and username == caller:
+                    pwd_errors = _password_errors(password)
+                    if pwd_errors:
+                        raise RuntimeError("La contraseña debe tener: " + ", ".join(pwd_errors) + ".")
                     set_user_password(username=username, password=password)
                 log_click(action="admin_user_update", username=caller, record_id=username, result="ok")
                 return redirect(url_for("admin_menu", msg=f"Usuario '{username}' actualizado."))
@@ -1763,7 +1792,8 @@ def create_app() -> Flask:
             changes["internal_note"] = {"from": internal_note_old, "to": internal_note_new}
 
         if not changes:
-            return redirect(url_for("listado_editar_done", msg="No hay cambios que guardar.", next=back_url))
+            session["_error"] = "No hay cambios que guardar."
+            return redirect(back_url)
 
         now = datetime.now(timezone.utc)
         history = rev.get("history") if isinstance(rev.get("history"), list) else []
@@ -1797,7 +1827,8 @@ def create_app() -> Flask:
             session["_error"] = f"No se pudo guardar la edición: {exc}"
             return redirect(back_url)
 
-        return redirect(url_for("listado_editar_done", msg="Cambios guardados.", next=back_url))
+        session["_error"] = "Cambios guardados."
+        return redirect(back_url)
 
     @app.get("/listado/editar/done")
     def listado_editar_done():
@@ -1805,15 +1836,8 @@ def create_app() -> Flask:
             return redirect(url_for("login"))
         msg = (request.args.get("msg") or "").strip() or "OK"
         next_url = (request.args.get("next") or "").strip() or url_for("listado")
-        return render_template(
-            "edit_done.html",
-            title="Edición",
-            current_user=session.get("user", ""),
-            app_version=app_version,
-            error=None,
-            message=msg,
-            next_url=next_url,
-        )
+        session["_error"] = msg
+        return redirect(next_url)
 
     @app.post("/action")
     def action():

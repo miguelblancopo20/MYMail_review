@@ -2,8 +2,10 @@
 {% block body %}
   <header class="topbar">
     <div class="topbar-left">
-      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
-      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+      <a class="topbar-brand" href="{{ url_for('menu') }}">
+        <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+        <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+      </a>
     </div>
     <div class="topbar-fields">
       <div class="topbar-field"><span>Vista</span><strong>Listado</strong></div>

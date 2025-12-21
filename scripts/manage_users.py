@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ def main(argv: list[str]) -> int:
     add = sub.add_parser("add", help="Crear/actualizar usuario")
     add.add_argument("--username", required=True)
     add.add_argument("--password", required=True)
+    add.add_argument("--email", required=True)
     add.add_argument("--role", default=ROLE_REVISOR, choices=[ROLE_REVISOR, ROLE_ADMIN, ROLE_SUPERADMIN])
 
     setrole = sub.add_parser("set-role", help="Cambiar rol a un usuario")
@@ -32,8 +34,26 @@ def main(argv: list[str]) -> int:
 
     args = parser.parse_args(argv)
 
+    def password_errors(pwd: str) -> list[str]:
+        errors = []
+        if len(pwd) < 12:
+            errors.append("mínimo 12 caracteres")
+        if not re.search(r"[A-Z]", pwd):
+            errors.append("una mayúscula")
+        if not re.search(r"[a-z]", pwd):
+            errors.append("una minúscula")
+        if not re.search(r"[0-9]", pwd):
+            errors.append("un número")
+        if not re.search(r"[^A-Za-z0-9]", pwd):
+            errors.append("un símbolo")
+        return errors
+
     if args.cmd == "add":
-        create_user(username=args.username, password=args.password, role=args.role)
+        errs = password_errors(args.password)
+        if errs:
+            print("ERROR: la contraseña debe tener: " + ", ".join(errs) + ".")
+            return 2
+        create_user(username=args.username, password=args.password, role=args.role, email=args.email)
         role = ROLE_ADMIN if args.username.lower() == "admin" else args.role
         print(f"OK: usuario '{args.username}' creado/actualizado (rol={role})")
         return 0

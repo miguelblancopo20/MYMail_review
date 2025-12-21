@@ -2,21 +2,13 @@
 {% block body %}
   <header class="topbar">
     <div class="topbar-left">
-      <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
-      <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+      <a class="topbar-brand" href="{{ url_for('menu') }}">
+        <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+        <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+      </a>
     </div>
     <div class="topbar-fields">
       <div class="topbar-field"><span>Vista</span><strong>Estadísticas</strong></div>
-      <div class="topbar-field">
-        <span>Ventana</span>
-        <div class="topbar-control">
-          <strong>{{ days }} días</strong>
-          <form method="get" class="topbar-inline">
-            <input name="days" value="{{ days }}" inputmode="numeric" class="topbar-input" />
-            <button class="btn btn-sm btn-ghost" type="submit">Aplicar</button>
-          </form>
-        </div>
-      </div>
     </div>
     <div class="topbar-right">
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
@@ -56,11 +48,21 @@
     ></div>
     <div class="stats-grid">
       <div class="card stat">
-        <div class="stat-k">Revisiones (últimos {{ days }} días)</div>
+        <div class="stat-k">Ventana</div>
+        <div class="topbar-control">
+          <strong>{{ days }} días</strong>
+          <form method="get" class="topbar-inline">
+            <input name="days" value="{{ days }}" inputmode="numeric" class="topbar-input" />
+            <button class="btn btn-sm btn-ghost" type="submit">Aplicar</button>
+          </form>
+        </div>
+      </div>
+      <div class="card stat">
+        <div class="stat-k">Revisiones</div>
         <div class="stat-v" id="statTotalRevisiones">{{ total_resultados }}</div>
       </div>
       <div class="card stat">
-        <div class="stat-k">Descartes (últimos {{ days }} días)</div>
+        <div class="stat-k">Descartes</div>
         <div class="stat-v" id="statTotalDescartes">{{ total_descartes }}</div>
       </div>
       <div class="card stat">

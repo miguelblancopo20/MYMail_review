@@ -58,12 +58,15 @@ def normalize_role(role: str) -> str:
     return ROLE_REVISOR
 
 
-def create_user(username: str, password: str, *, role: str = ROLE_REVISOR) -> None:
+def create_user(username: str, password: str, *, role: str = ROLE_REVISOR, email: str = "") -> None:
     username = (username or "").strip()
     if not username:
         raise ValueError("username vacío")
     if not password:
         raise ValueError("password vacío")
+    email = (email or "").strip()
+    if not email:
+        raise ValueError("email vacío")
 
     now = _utcnow()
     role = normalize_role(role)
@@ -89,6 +92,7 @@ def create_user(username: str, password: str, *, role: str = ROLE_REVISOR) -> No
             "role": role,
             "active": True,
             "created_at": created_at,
+            "email": email,
         }
     )
 
@@ -103,7 +107,70 @@ def set_user_role(username: str, role: str) -> None:
     elif role == ROLE_SUPERADMIN:
         role = ROLE_ADMIN
     c = _cosmos(_containers().users)
-    c.upsert_item({"id": username, "pk": "users", "role": role})
+    password_hash = ""
+    created_at = ""
+    last_login_at = ""
+    email = ""
+    active = True
+    try:
+        existing = c.read_item(item=username, partition_key="users")
+        if isinstance(existing, dict):
+            password_hash = str(existing.get("password_hash", "") or "")
+            created_at = str(existing.get("created_at", "") or "")
+            last_login_at = str(existing.get("last_login_at", "") or "")
+            email = str(existing.get("email", "") or "")
+            active = bool(existing.get("active", True))
+    except Exception:
+        pass
+    c.upsert_item(
+        {
+            "id": username,
+            "pk": "users",
+            "password_hash": password_hash,
+            "role": role,
+            "active": active,
+            "created_at": created_at,
+            "last_login_at": last_login_at,
+            "email": email,
+        }
+    )
+
+
+def set_user_email(username: str, email: str) -> None:
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("username vacio")
+    email = (email or "").strip()
+    if not email:
+        raise ValueError("email vacío")
+    c = _cosmos(_containers().users)
+    password_hash = ""
+    created_at = ""
+    last_login_at = ""
+    role = ""
+    active = True
+    try:
+        existing = c.read_item(item=username, partition_key="users")
+        if isinstance(existing, dict):
+            password_hash = str(existing.get("password_hash", "") or "")
+            created_at = str(existing.get("created_at", "") or "")
+            last_login_at = str(existing.get("last_login_at", "") or "")
+            role = str(existing.get("role", "") or "")
+            active = bool(existing.get("active", True))
+    except Exception:
+        pass
+    c.upsert_item(
+        {
+            "id": username,
+            "pk": "users",
+            "password_hash": password_hash,
+            "role": role or ROLE_REVISOR,
+            "active": active,
+            "created_at": created_at,
+            "last_login_at": last_login_at,
+            "email": email,
+        }
+    )
 
 
 def set_user_password(username: str, password: str) -> None:
@@ -114,7 +181,33 @@ def set_user_password(username: str, password: str) -> None:
         raise ValueError("password vacío")
 
     c = _cosmos(_containers().users)
-    c.upsert_item({"id": username, "pk": "users", "password_hash": generate_password_hash(password)})
+    created_at = ""
+    last_login_at = ""
+    email = ""
+    role = ""
+    active = True
+    try:
+        existing = c.read_item(item=username, partition_key="users")
+        if isinstance(existing, dict):
+            created_at = str(existing.get("created_at", "") or "")
+            last_login_at = str(existing.get("last_login_at", "") or "")
+            email = str(existing.get("email", "") or "")
+            role = str(existing.get("role", "") or "")
+            active = bool(existing.get("active", True))
+    except Exception:
+        pass
+    c.upsert_item(
+        {
+            "id": username,
+            "pk": "users",
+            "password_hash": generate_password_hash(password),
+            "role": role or ROLE_REVISOR,
+            "active": active,
+            "created_at": created_at,
+            "last_login_at": last_login_at,
+            "email": email,
+        }
+    )
 
 
 def list_users() -> list[dict[str, str]]:
@@ -122,7 +215,7 @@ def list_users() -> list[dict[str, str]]:
     try:
         c = _cosmos(_containers().users)
         rows = c.query_items(
-            query="SELECT c.id, c.role, c.active, c.created_at FROM c WHERE c.pk=@pk",
+            query="SELECT c.id, c.role, c.active, c.created_at, c.last_login_at, c.email FROM c WHERE c.pk=@pk",
             parameters=[{"name": "@pk", "value": "users"}],
             enable_cross_partition_query=True,
         )
@@ -133,6 +226,8 @@ def list_users() -> list[dict[str, str]]:
                     "role": normalize_role(str(ent.get("role", "") or ROLE_REVISOR)),
                     "active": "1" if bool(ent.get("active", True)) else "0",
                     "created_at": str(ent.get("created_at", "") or ""),
+                    "last_login_at": str(ent.get("last_login_at", "") or ""),
+                    "email": str(ent.get("email", "") or ""),
                 }
             )
     except Exception:
