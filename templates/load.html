@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block body %}
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="topbar-brand" href="{{ url_for('menu') }}">
+        <img class="topbar-logo" alt="EY logo" src="{{ url_for('static', filename='img/ey.png') }}" onerror="this.style.display='none'" />
+        <div class="topbar-title">Revisor de Mayordomo Mail <span class="version-badge">v{{ app_version }}</span></div>
+      </a>
+    </div>
+    <div class="topbar-fields">
+      <div class="topbar-field"><span>Vista</span><strong>Carga</strong></div>
+    </div>
+    <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('pendientes') }}">Pendientes</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('review') }}">Revisi&oacute;n</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats') }}">Estad&iacute;sticas</a>
+      <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('stats_my') }}">Estad&iacute;sticas MY</a>
+      {% if (session.get("role") or "") == "SuperAdmin" %}
+        <a class="pill pill-link" href="{{ url_for('admin_menu') }}">{{ current_user }}</a>
+      {% else %}
+        <a class="pill pill-link" href="{{ url_for('account') }}">{{ current_user }}</a>
+      {% endif %}
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M3 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 8l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <main class="page page--full">
+    {% if message %}
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">OK</div>
+        <p style="margin:0;color:#374151">{{ message }}</p>
+      </div>
+    {% endif %}
+
+    <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto">
+      <section class="section section--review">
+        <div class="section-title">Subir ficheros</div>
+        <form method="post" action="{{ url_for('load_post') }}" enctype="multipart/form-data" class="stack" data-overlay data-overlay-message="Subiendo ficheros...">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <label class="field">
+            <span>Semana</span>
+            <select name="week_key" required>
+              {% for w in (week_options or []) %}
+                <option value="{{ w.key }}" {% if w.key == (selected_week or "") %}selected{% endif %}>{{ w.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          {% for key in upload_keys %}
+            <label class="field">
+              <span>{{ key }}</span>
+              <input type="file" name="{{ key }}" required accept=".csv" />
+            </label>
+          {% endfor %}
+          <div class="actions">
+            <button class="btn btn-primary" type="submit" {% if existing %}disabled{% endif %}>Subir</button>
+          </div>
+        </form>
+        <p style="margin:10px 0 0;color:#6b7280;font-size:13px">
+          Solo se admiten CSV. El nombre del fichero (sin extensi&oacute;n) debe coincidir exactamente con la clave.
+        </p>
+        {% if existing %}
+          <p style="margin:10px 0 0;color:#b91c1c;font-size:13px">
+            Esta semana ya tiene una carga registrada. Para permitir otra, hay que borrarla en Blob Storage.
+          </p>
+        {% endif %}
+      </section>
+
+      <section class="section section--act">
+        <div class="section-title">Semana seleccionada</div>
+        {% if selected_week %}
+          <div class="kv-list" style="margin-bottom:10px">
+            <div class="kv-row"><div class="k">Semana</div><div class="v">{{ selected_week }}</div></div>
+          </div>
+        {% endif %}
+
+        {% if existing %}
+          <div class="kv-list">
+            <div class="kv-row"><div class="k">Timestamp</div><div class="v">{{ existing.get("timestamp","") }}</div></div>
+            <div class="kv-row"><div class="k">Usuario</div><div class="v">{{ existing.get("user","") }}</div></div>
+            <div class="kv-row"><div class="k">ID</div><div class="v">{{ existing.get("id","") }}</div></div>
+          </div>
+          <table class="tbl" style="margin-top:10px">
+            <thead>
+              <tr><th>Clave</th><th>Fichero</th><th>Tama&ntilde;o</th><th>SHA256</th></tr>
+            </thead>
+            <tbody>
+              {% for key in upload_keys %}
+                {% set f = (existing.get("files", {}) or {}).get(key) %}
+                <tr>
+                  <td>{{ key }}</td>
+                  <td>{{ (f.get("filename","") if f else "-") }}</td>
+                  <td>{{ (f.get("size","") if f else "-") }}</td>
+                  <td style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px">
+                    {{ (f.get("sha256","") if f else "-") }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p style="margin:0;color:#6b7280">Sin carga para esta semana (o Cosmos no disponible).</p>
+        {% endif %}
+      </section>
+    </div>
+  </main>
+{% endblock %}

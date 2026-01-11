@@ -51,6 +51,16 @@
         <input type="hidden" name="page" value="1" />
         <input type="hidden" name="per_page" value="{{ per_page or 10 }}" />
 
+        <div class="field" style="min-width:300px">
+          <span>Semana</span>
+          <select name="week">
+            <option value="" {% if not selected_week %}selected{% endif %}>Todas</option>
+            {% for w in (week_options or []) %}
+              <option value="{{ w.key }}" {% if w.key == (selected_week or "") %}selected{% endif %}>{{ w.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
         <div class="field" style="min-width:220px">
           <span>ID Correo</span>
           <input name="idcorreo" value="{{ selected_id or '' }}" placeholder="Ej: 12345" />
@@ -146,16 +156,17 @@
       <div class="list-footer">
         <div class="list-footer-right">
           {% if page > 1 %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=1) }}">&laquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=page-1) }}">&lsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', week=selected_week, idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=1) }}">&laquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', week=selected_week, idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=page-1) }}">&lsaquo;</a>
           {% endif %}
           <div class="pill pill-sm">P&aacute;gina {{ page }} / {{ total_pages }}</div>
           {% if page < total_pages %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=page+1) }}">&rsaquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=total_pages) }}">&raquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', week=selected_week, idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=page+1) }}">&rsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('pendientes', week=selected_week, idcorreo=selected_id, tematica=selected_tematica, subtematica=selected_subtematica, automatismo=selected_automatismo, validado=selected_validado, motivo=selected_motivo, comentario=selected_comentario, per_page=per_page, page=total_pages) }}">&raquo;</a>
           {% endif %}
           <form method="get" class="list-footer-form">
             <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="week" value="{{ selected_week or '' }}" />
             <input type="hidden" name="idcorreo" value="{{ selected_id or '' }}" />
             <input type="hidden" name="tematica" value="{{ selected_tematica or '' }}" />
             <input type="hidden" name="subtematica" value="{{ selected_subtematica or '' }}" />

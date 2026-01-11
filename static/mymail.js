@@ -135,7 +135,7 @@
 
     const heartbeatEl = document.getElementById("lock-heartbeat");
     const heartbeatUrl = heartbeatEl?.dataset?.heartbeatUrl || "";
-    const refreshUrl = pageRefreshUrl || heartbeatEl?.dataset?.refreshUrl || window.location.href;
+    const refreshUrl = heartbeatEl?.dataset?.refreshUrl || pageRefreshUrl || window.location.href;
     const initialError = pageError || heartbeatEl?.dataset?.error || "";
     if (initialError) showModal(initialError);
 

@@ -13,10 +13,10 @@
         <span>Semana (L-D)</span>
         <div class="topbar-control">
           <form method="get" class="topbar-inline">
-            <select name="week_start" class="topbar-input" style="width:220px">
-              <option value="" {% if not selected_week_start %}selected{% endif %}>Todas</option>
-              {% for opt in (week_options or []) %}
-                <option value="{{ opt.get('value','') }}" {% if opt.get('value','') == (selected_week_start or '') %}selected{% endif %}>{{ opt.get('label','') }}</option>
+            <select name="week" class="topbar-input" style="width:320px">
+              <option value="" {% if not selected_week %}selected{% endif %}>Todas</option>
+              {% for w in (week_options or []) %}
+                <option value="{{ w.key }}" {% if w.key == (selected_week or '') %}selected{% endif %}>{{ w.label }}</option>
               {% endfor %}
             </select>
             <button class="btn btn-sm btn-ghost" type="submit">Aplicar</button>
@@ -58,7 +58,7 @@
       class="hidden"
       data-keep-overlay="1"
       data-api="{{ url_for('api_stats_pendientes', week_start=(selected_week_start or '')) }}"
-      data-week="{{ selected_week_start or '' }}"
+      data-week="{{ selected_week or '' }}"
     ></div>
 
     <section class="section section--mail" style="margin-top:0">

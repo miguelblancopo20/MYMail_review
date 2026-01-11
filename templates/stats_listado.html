@@ -55,6 +55,16 @@
           </select>
         </div>
 
+        <div class="field" style="min-width:320px">
+          <span>Semana</span>
+          <select name="week">
+            <option value="" {% if not selected_week %}selected{% endif %}>Todas</option>
+            {% for w in (week_options or []) %}
+              <option value="{{ w.key }}" {% if selected_week == w.key %}selected{% endif %}>{{ w.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
         <div class="field" style="min-width:240px">
           <span>Filtrar por Estado</span>
           <select name="estado">
@@ -75,8 +85,8 @@
           <details class="dropdown">
             <summary class="btn btn-ghost">Descargar</summary>
             <div class="dropdown-menu">
-              <a class="dropdown-item" href="{{ url_for('listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='csv') }}">CSV</a>
-              <a class="dropdown-item" href="{{ url_for('listado_download', revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='xlsx') }}">Excel</a>
+              <a class="dropdown-item" href="{{ url_for('listado_download', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='csv') }}">CSV</a>
+              <a class="dropdown-item" href="{{ url_for('listado_download', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, format='xlsx') }}">Excel</a>
             </div>
           </details>
         </div>
@@ -209,26 +219,27 @@
       <div class="list-footer">
         <div class="list-footer-left hidden">
           {% if page > 1 %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
           {% endif %}
           {% if page < total_pages %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
           {% endif %}
         </div>
         <div class="list-footer-right">
           {% if page > 1 %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=1) }}">&laquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page-1) }}">&lsaquo;</a>
           {% endif %}
           <div class="pill pill-sm">PÇ­gina {{ page }} / {{ total_pages }}</div>
           {% if page < total_pages %}
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
-            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=page+1) }}">&rsaquo;</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('listado', week=selected_week, revisor=selected_user, estado=selected_status, idcorreo=selected_id, per_page=per_page, page=total_pages) }}">&raquo;</a>
           {% endif %}
           <form method="get" class="list-footer-form">
             <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="week" value="{{ selected_week or '' }}" />
             <input type="hidden" name="revisor" value="{{ selected_user or '' }}" />
             <input type="hidden" name="estado" value="{{ selected_status or '' }}" />
             <input type="hidden" name="idcorreo" value="{{ selected_id or '' }}" />

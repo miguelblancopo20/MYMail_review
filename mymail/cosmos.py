@@ -13,6 +13,7 @@ class CosmosContainers:
     resultados: str
     descartes: str
     entrada: str
+    loads: str
 
 
 def cosmos_enabled() -> bool:
@@ -28,6 +29,7 @@ def containers() -> CosmosContainers:
         resultados=str(getattr(config, "COSMOS_CONTAINER_RESULTADOS", "resultados") or "resultados"),
         descartes=str(getattr(config, "COSMOS_CONTAINER_DESCARTES", "descartes") or "descartes"),
         entrada=str(getattr(config, "COSMOS_CONTAINER_ENTRADA", "entrada") or "entrada"),
+        loads=str(getattr(config, "COSMOS_CONTAINER_LOADS", "loads") or "loads"),
     )
 
 
@@ -100,7 +102,7 @@ def ensure_resources() -> None:
     """
     Crea DB y contenedores si no existen.
     PartitionKey path esperado:
-    - users/logs/resultados/descartes/entrada: /pk
+    - users/logs/resultados/descartes/entrada/loads: /pk
     """
     from azure.cosmos import PartitionKey
     from azure.cosmos.exceptions import CosmosResourceExistsError

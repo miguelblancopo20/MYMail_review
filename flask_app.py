@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import secrets
+import tempfile
 import time
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
 from io import BytesIO, StringIO
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import csv
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for, send_file
+from werkzeug.utils import secure_filename
 
 import config
 from mymail.entrada import EntradaKey, clear_expired_locks, refresh_lock, release_lock, validate_lock
@@ -27,6 +30,8 @@ from mymail.revisiones import get_revision, list_revisions, save_revision
 from mymail.tables import ROLE_ADMIN, ROLE_SUPERADMIN, create_user, get_user, list_users, log_click, set_user_email, set_user_last_login, set_user_password, set_user_role, verify_user
 from mymail.tables import _list_by_day_range, _list_by_days
 from mymail.tables import write_descarte, write_resultado
+from mymail.loads import get_latest_load_batch, get_load_batch_by_week, save_load_batch
+from mymail.blob import delete_load_blobs, upload_load_blob
 
 
 def create_app() -> Flask:
@@ -562,6 +567,248 @@ def create_app() -> Flask:
         session["_error"] = "Acción no válida."
         return redirect(url_for("admin_menu"))
 
+    _LOAD_KEYS: list[str] = [
+        "fichas_levantadas",
+        "ia",
+        "ia-transacciones",
+        "orquestador_contexto",
+        "rpa",
+        "validaciones",
+    ]
+
+    def _load_week_options() -> list[dict[str, str]]:
+        tz = ZoneInfo("Europe/Madrid")
+        today = datetime.now(tz).date()
+        forced_today = (os.environ.get("MYMAIL_LOAD_TODAY", "") or "").strip()
+        if forced_today:
+            try:
+                today = datetime.fromisoformat(forced_today).date()
+            except Exception:
+                today = today
+
+        start = date.fromisocalendar(2026, 1, 1)  # ISO week 1 of 2026 (Monday)
+        current_week_start = today - timedelta(days=today.weekday())
+        last_week_start = current_week_start - timedelta(days=7)
+        if last_week_start < start:
+            return []
+
+        out = []
+        d = start
+        while d <= last_week_start:
+            iso = d.isocalendar()
+            week_key = f"{iso.year}-W{iso.week:02d}"
+            week_end = d + timedelta(days=6)
+            label = f"W{iso.week:02d} {iso.year} ({d.isoformat()} a {week_end.isoformat()})"
+            out.append({"key": week_key, "label": label, "start": d.isoformat(), "end": week_end.isoformat()})
+            d += timedelta(days=7)
+        return out
+
+    def _madrid_date_from_iso(value: str) -> date | None:
+        v = (value or "").strip()
+        if not v:
+            return None
+        try:
+            if v.endswith("Z"):
+                v = v[:-1] + "+00:00"
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(ZoneInfo("Europe/Madrid"))
+            return dt.date()
+        except Exception:
+            return None
+
+    def _spool_to_temp_and_hash(file_storage, *, limit_bytes: int) -> tuple[str, int, str]:
+        stream = getattr(file_storage, "stream", None)
+        if stream is None:
+            raise RuntimeError("No se pudo leer el fichero.")
+        h = hashlib.sha256()
+        total = 0
+        tmp = tempfile.NamedTemporaryFile(prefix="mymail-load-", suffix=".csv", delete=False)
+        tmp_path = tmp.name
+        try:
+            with tmp:
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > int(limit_bytes):
+                        raise RuntimeError(f"El fichero supera el l\u00edmite ({limit_bytes} bytes).")
+                    h.update(chunk)
+                    tmp.write(chunk)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            raise
+        return tmp_path, total, h.hexdigest()
+
+    @app.get("/load")
+    def load():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if not _is_admin_role(session.get("role") or ""):
+            session["_error"] = "No autorizado: solo Administrador."
+            return redirect(url_for("menu"))
+
+        week_options = _load_week_options()
+        if not week_options:
+            session["_error"] = "No hay semanas disponibles para carga (solo hasta la semana anterior)."
+            return render_template(
+                "load.html",
+                title="Load",
+                current_user=session.get("user", ""),
+                app_version=app_version,
+                error=session.pop("_error", None),
+                message=(request.args.get("msg") or "").strip(),
+                upload_keys=_LOAD_KEYS,
+                week_options=[],
+                selected_week="",
+                existing=None,
+                latest=None,
+            )
+
+        allowed_weeks = {w["key"]: w for w in week_options}
+        selected_week = (request.args.get("week") or "").strip() or week_options[-1]["key"]
+        if selected_week not in allowed_weeks:
+            selected_week = week_options[-1]["key"]
+
+        msg = (request.args.get("msg") or "").strip()
+        latest = None
+        existing = None
+        try:
+            latest = get_latest_load_batch()
+        except Exception:
+            latest = None
+        try:
+            existing = get_load_batch_by_week(selected_week)
+        except Exception:
+            existing = None
+        return render_template(
+            "load.html",
+            title="Load",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=session.pop("_error", None),
+            message=msg,
+            upload_keys=_LOAD_KEYS,
+            week_options=week_options,
+            selected_week=selected_week,
+            existing=existing,
+            latest=latest,
+        )
+
+    @app.post("/load")
+    def load_post():
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        if not _is_admin_role(session.get("role") or ""):
+            session["_error"] = "No autorizado: solo Administrador."
+            return redirect(url_for("menu"))
+
+        caller = session.get("user", "") or ""
+        week_options = _load_week_options()
+        allowed_weeks = {w["key"]: w for w in week_options}
+        week_key = (request.form.get("week_key") or "").strip()
+        if not week_key or week_key not in allowed_weeks:
+            session["_error"] = "Semana no válida."
+            return redirect(url_for("load"))
+        week_start = allowed_weeks[week_key]["start"]
+
+        try:
+            existing = get_load_batch_by_week(week_key)
+        except Exception:
+            existing = None
+        if existing:
+            session["_error"] = f"Ya existe una carga para {week_key}. Para volver a subir, elimina esa semana en Blob Storage."
+            return redirect(url_for("load", week=week_key))
+
+        key = f"load:{_client_ip()}:{caller.lower()}"
+        allowed, retry_after = _rate_limit(key, limit=8, window_s=600)
+        if not allowed:
+            session["_error"] = f"Demasiadas subidas seguidas. Espera {retry_after}s y vuelve a intentarlo."
+            return redirect(url_for("load", week=week_key))
+
+        allowed_exts = {".csv"}
+        max_bytes = int(os.environ.get("MYMAIL_LOAD_MAX_BYTES", "1073741824") or "1073741824")
+
+        files = []
+        uploaded_blob_names = []
+        try:
+            for expected in _LOAD_KEYS:
+                f = request.files.get(expected)
+                if not f or not (f.filename or "").strip():
+                    raise RuntimeError(f"Falta el fichero '{expected}'.")
+
+                original = secure_filename(str(f.filename or "")) or str(f.filename or "")
+                base, ext = os.path.splitext(original)
+                ext = (ext or "").lower()
+                if not ext:
+                    raise RuntimeError(f"El fichero '{expected}' debe tener extensi\u00f3n.")
+                if ext not in allowed_exts:
+                    raise RuntimeError(f"Extensi\u00f3n no permitida para '{expected}': {ext}")
+                if norm_key(base) != norm_key(expected):
+                    raise RuntimeError(f"El nombre del fichero debe ser '{expected}' (recibido: '{base}').")
+
+                tmp_path, size, sha256 = _spool_to_temp_and_hash(f, limit_bytes=max_bytes)
+                files.append(
+                    {
+                        "key": expected,
+                        "mimetype": str(getattr(f, "mimetype", "") or ""),
+                        "filename": f"{expected}{ext}",
+                        "size": size,
+                        "sha256": sha256,
+                        "tmp_path": tmp_path,
+                    }
+                )
+
+            file_meta = []
+            for item in files:
+                blob_name = upload_load_blob(
+                    week_key=week_key,
+                    logical_name=str(item.get("key") or ""),
+                    file_path=str(item.get("tmp_path") or ""),
+                    content_type=str(item.get("mimetype") or "") or "text/csv",
+                )
+                uploaded_blob_names.append(blob_name)
+                file_meta.append(
+                    {
+                        "key": item.get("key"),
+                        "filename": item.get("filename"),
+                        "mimetype": item.get("mimetype"),
+                        "size": item.get("size"),
+                        "sha256": item.get("sha256"),
+                        "blob_name": blob_name,
+                    }
+                )
+
+            batch_id = save_load_batch(username=caller, week_key=week_key, week_start=week_start, files=file_meta)
+            log_click(
+                action="load_upload",
+                username=caller,
+                record_id=batch_id,
+                result="ok",
+                extra={"week_key": week_key, "count": len(files)},
+            )
+        except Exception as exc:
+            if uploaded_blob_names:
+                delete_load_blobs(uploaded_blob_names)
+            session["_error"] = str(exc)
+            log_click(action="load_upload", username=caller, result="fail", extra={"week_key": week_key, "error": str(exc)[:200]})
+            return redirect(url_for("load", week=week_key))
+        finally:
+            for item in files:
+                tmp_path = str(item.get("tmp_path") or "")
+                if tmp_path:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+
+        return redirect(url_for("load", week=week_key, msg="Ficheros subidos correctamente."))
+
     @app.get("/review")
     def review():
         if not session.get("authenticated"):
@@ -745,6 +992,7 @@ def create_app() -> Flask:
         if not session.get("authenticated"):
             return redirect(url_for("login"))
 
+        selected_week = (request.args.get("week") or "").strip()
         selected_id = (request.args.get("idcorreo") or "").strip()
         selected_tematica = (request.args.get("tematica") or "").strip()
         selected_subtematica = (request.args.get("subtematica") or "").strip()
@@ -778,6 +1026,20 @@ def create_app() -> Flask:
                 "done.html",
                 message=f"No se pudo cargar la lista de pendientes (Cosmos container 'entrada'): {exc}",
             )
+
+        week_options = _load_week_options()
+        allowed_weeks = {w["key"]: w for w in (week_options or []) if w.get("key")}
+        if selected_week:
+            if selected_week not in allowed_weeks:
+                selected_week = ""
+            else:
+                start_d = date.fromisoformat(allowed_weeks[selected_week]["start"])
+                end_d = start_d + timedelta(days=6)
+                metas = [
+                    m
+                    for m in metas
+                    if (d := _madrid_date_from_iso(str((m or {}).get("timestamp", "") or ""))) and start_d <= d <= end_d
+                ]
 
         if selected_id:
             metas = [m for m in metas if contains(m.get("record_id", ""), selected_id)]
@@ -871,6 +1133,8 @@ def create_app() -> Flask:
             app_version=app_version,
             error=session.pop("_error", None),
             can_stats=_is_admin_role(session.get("role") or ""),
+            week_options=week_options,
+            selected_week=selected_week,
             selected_id=selected_id,
             selected_tematica=selected_tematica,
             selected_subtematica=selected_subtematica,
@@ -967,41 +1231,20 @@ def create_app() -> Flask:
             session["_error"] = "No autorizado: solo Administrador puede ver Estadísticas MY."
             return redirect(url_for("review"))
 
+        week_options = _load_week_options()
+        allowed_weeks = {w["key"]: w for w in (week_options or []) if w.get("key")}
+        start_to_key = {w.get("start"): w.get("key") for w in (week_options or []) if w.get("start") and w.get("key")}
+
+        selected_week = (request.args.get("week") or "").strip()
         selected_week_start = (request.args.get("week_start") or "").strip()
+        if not selected_week and selected_week_start and selected_week_start in start_to_key:
+            selected_week = str(start_to_key[selected_week_start] or "")
 
-        week_options = []
-        try:
-            metas = list_pending_meta(limit=5000)
-            week_starts = set()
-            tz = ZoneInfo("Europe/Madrid")
-            for m in metas:
-                ts = str((m or {}).get("timestamp", "") or "").strip()
-                if not ts:
-                    continue
-                try:
-                    v = ts
-                    if v.endswith("Z"):
-                        v = v[:-1] + "+00:00"
-                    dt = datetime.fromisoformat(v)
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    dt = dt.astimezone(tz)
-                    ws = (dt.date() - timedelta(days=dt.weekday()))
-                    week_starts.add(ws)
-                except Exception:
-                    continue
-
-            for ws in sorted(week_starts, reverse=True):
-                we = ws + timedelta(days=6)
-                week_no = ws.isocalendar().week
-                week_options.append(
-                    {
-                        "value": ws.isoformat(),
-                        "label": f"SEMANA{week_no}: {ws.strftime('%d/%m/%Y')} - {we.strftime('%d/%m/%Y')}",
-                    }
-                )
-        except Exception:
-            week_options = []
+        if selected_week and selected_week in allowed_weeks:
+            selected_week_start = allowed_weeks[selected_week]["start"]
+        else:
+            selected_week = ""
+            selected_week_start = ""
 
         return render_template(
             "stats_my.html",
@@ -1011,6 +1254,7 @@ def create_app() -> Flask:
             error=session.pop("_error", None),
             week_options=week_options,
             selected_week_start=selected_week_start,
+            selected_week=selected_week,
         )
 
     @app.get("/api/stats/revisiones")
@@ -1422,6 +1666,7 @@ def create_app() -> Flask:
         selected_user = (request.args.get("revisor") or "").strip()
         selected_status = (request.args.get("estado") or "").strip()
         selected_id = (request.args.get("idcorreo") or "").strip()
+        selected_week = (request.args.get("week") or "").strip()
         per_page = (request.args.get("per_page") or "").strip()
         page = (request.args.get("page") or "").strip()
         try:
@@ -1438,6 +1683,7 @@ def create_app() -> Flask:
         try:
             rows = list_revisions(username=selected_user, limit=5000)
         except Exception as exc:
+            week_options = _load_week_options()
             return render_template(
                 "stats_listado.html",
                 title="Listado",
@@ -1449,6 +1695,8 @@ def create_app() -> Flask:
                 statuses=[],
                 selected_status=selected_status,
                 selected_id=selected_id,
+                week_options=week_options,
+                selected_week=selected_week,
                 per_page=per_page_i,
                 page=page_i,
                 total=0,
@@ -1460,6 +1708,20 @@ def create_app() -> Flask:
             return str(it.get("timestamp", "") or "")
 
         rows.sort(key=sort_key, reverse=True)
+
+        week_options = _load_week_options()
+        allowed_weeks = {w["key"]: w for w in (week_options or []) if w.get("key")}
+        if selected_week:
+            if selected_week not in allowed_weeks:
+                selected_week = ""
+            else:
+                start_d = date.fromisoformat(allowed_weeks[selected_week]["start"])
+                end_d = start_d + timedelta(days=6)
+                rows = [
+                    r
+                    for r in rows
+                    if (d := _madrid_date_from_iso(str(r.get("timestamp", "") or ""))) and start_d <= d <= end_d
+                ]
 
         statuses = _status_options(rows)
         if selected_status:
@@ -1541,6 +1803,8 @@ def create_app() -> Flask:
             statuses=statuses,
             selected_status=selected_status,
             selected_id=selected_id,
+            week_options=week_options,
+            selected_week=selected_week,
             per_page=per_page_i,
             page=page_i,
             total=total,
@@ -1559,12 +1823,24 @@ def create_app() -> Flask:
         selected_user = (request.args.get("revisor") or "").strip()
         selected_status = (request.args.get("estado") or "").strip()
         selected_id = (request.args.get("idcorreo") or "").strip()
+        selected_week = (request.args.get("week") or "").strip()
         fmt = (request.args.get("format") or "csv").strip().lower()
         if fmt not in {"csv", "xlsx"}:
             fmt = "csv"
 
         rows = list_revisions(username=selected_user, limit=5000)
         rows.sort(key=lambda it: str(it.get("timestamp", "") or ""), reverse=True)
+
+        week_options = _load_week_options()
+        allowed_weeks = {w["key"]: w for w in (week_options or []) if w.get("key")}
+        if selected_week and selected_week in allowed_weeks:
+            start_d = date.fromisoformat(allowed_weeks[selected_week]["start"])
+            end_d = start_d + timedelta(days=6)
+            rows = [
+                r
+                for r in rows
+                if (d := _madrid_date_from_iso(str(r.get("timestamp", "") or ""))) and start_d <= d <= end_d
+            ]
         if selected_status:
             rows = [r for r in rows if str(r.get("status", "") or "").strip() == selected_status]
         if selected_id:
