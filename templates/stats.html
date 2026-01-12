@@ -8,7 +8,21 @@
       </a>
     </div>
     <div class="topbar-fields">
-      <div class="topbar-field"><span>Vista</span><strong>Estadísticas</strong></div>
+      <div class="topbar-field"><span>Vista</span><strong>Estad&iacute;sticas MY Review</strong></div>
+      <div class="topbar-field">
+        <span>Semana (L-D)</span>
+        <div class="topbar-control">
+          <form method="get" class="topbar-inline">
+            <select name="week" class="topbar-input" style="width:320px">
+              <option value="" {% if not selected_week %}selected{% endif %}>Todas</option>
+              {% for w in (week_options or []) %}
+                <option value="{{ w.key }}" {% if w.key == (selected_week or '') %}selected{% endif %}>{{ w.label }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-ghost" type="submit">Aplicar</button>
+          </form>
+        </div>
+      </div>
     </div>
     <div class="topbar-right">
       <a class="btn btn-ghost btn-sm btn-nav" href="{{ url_for('listado') }}">Listado</a>
@@ -21,7 +35,7 @@
       {% else %}
         <a class="pill pill-link" href="{{ url_for('account') }}">{{ current_user }}</a>
       {% endif %}
-      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesión" title="Cerrar sesión">
+      <a class="btn btn-logout btn-icon" href="{{ url_for('logout') }}" aria-label="Cerrar sesi&oacute;n" title="Cerrar sesi&oacute;n">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1"
@@ -40,73 +54,44 @@
 
   <main class="page page--full">
     <div
-      id="stats-loader"
+      id="stats-myreview-loader"
       class="hidden"
       data-keep-overlay="1"
-      data-days="{{ days }}"
-      data-api-revisiones="{{ url_for('api_stats_revisiones', days=days) }}"
+      data-api="{{ url_for('api_stats_pendientes', week_start=(selected_week_start or '')) }}"
+      data-week="{{ selected_week or '' }}"
     ></div>
-    <div class="stats-grid">
-      <div class="card stat">
-        <div class="stat-k">Ventana</div>
-        <div class="topbar-control">
-          <strong>{{ days }} días</strong>
-          <form method="get" class="topbar-inline">
-            <input name="days" value="{{ days }}" inputmode="numeric" class="topbar-input" />
-            <button class="btn btn-sm btn-ghost" type="submit">Aplicar</button>
-          </form>
-        </div>
-      </div>
-      <div class="card stat">
-        <div class="stat-k">Revisiones</div>
-        <div class="stat-v" id="statTotalRevisiones">{{ total_resultados }}</div>
-      </div>
-      <div class="card stat">
-        <div class="stat-k">Descartes</div>
-        <div class="stat-v" id="statTotalDescartes">{{ total_descartes }}</div>
-      </div>
-      <div class="card stat">
-        <div class="stat-k">%KO Agente</div>
-        <div class="stat-v" id="statKoAgentRate">{{ ko_agent_rate }}</div>
-      </div>
-      <div class="card stat">
-        <div class="stat-k">%KO MY</div>
-        <div class="stat-v" id="statKoMyRate">{{ ko_my_rate }}</div>
-      </div>
-      <div class="card stat">
-        <div class="stat-k">DUDA</div>
-        <div class="stat-v" id="statDuda">{{ duda_count }}</div>
-      </div>
-    </div>
 
-    <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto">
-      <section class="section section--review">
-        <div class="section-title">Estados (Top 10)</div>
-        <div class="kv-list" id="listByStatus"></div>
-      </section>
+    <section class="section section--mail" style="margin-top:0">
+      <div class="section-title">Estad&iacute;sticas de correos pendientes</div>
+      <div class="actions" style="justify-content:flex-start; gap:10px; flex-wrap:wrap; margin-top:8px">
+        <div class="pill" id="pillPendingTotal">Pendientes: ?</div>
+        <div class="pill" id="pillPendingLoaded">Cargados: ?</div>
+      </div>
 
-      <section class="section section--act">
-        <div class="section-title">Top Automatismos (Top 10)</div>
-        <div class="kv-list" id="listTopAutomatismos"></div>
-      </section>
+      <div class="layout" style="grid-template-columns: 1fr 1fr; height:auto; margin-top:10px">
+        <section class="section section--act" style="margin-top:0">
+          <div class="section-title">Pendientes por tem&aacute;tica (n y %)</div>
+          <div class="kv-list" id="listPendingByTematica"></div>
+        </section>
 
-      <section class="section section--agent">
-        <div class="section-title">Revisiones por usuario</div>
-        <div class="kv-list" id="listByUser"></div>
-      </section>
+        <section class="section section--agent" style="margin-top:0">
+          <div class="section-title">Top MatriculaAsesor (Top 10)</div>
+          <div class="kv-list" id="listPendingTopMatriculas"></div>
+        </section>
 
-      <section class="section section--mail">
-        <div class="section-title">Actividad diaria</div>
-        <div class="kv-list" id="listByDay"></div>
-      </section>
-    </div>
+        <section class="section section--review" style="margin-top:0">
+          <div class="section-title">Ranking por motivo (Top 20)</div>
+          <div class="kv-list" id="listPendingMotivo"></div>
+        </section>
+      </div>
+    </section>
 
     <script>
       window.addEventListener("DOMContentLoaded", () => {
         const ui = window.MYMAIL_UI;
-        const loader = document.getElementById("stats-loader");
+        const loader = document.getElementById("stats-myreview-loader");
         if (!loader) return;
-        const apiRevisiones = loader.dataset.apiRevisiones || "";
+        const api = loader.dataset.api || "";
 
         const setText = (id, value) => {
           const el = document.getElementById(id);
@@ -133,43 +118,29 @@
           });
         };
 
-        const fillList2 = (id, rows) => {
-          const el = document.getElementById(id);
-          if (!el) return;
-          el.innerHTML = "";
-          const items = Array.isArray(rows) ? rows : [];
-          if (!items.length) {
-            el.innerHTML = '<div class="kv-row"><div class="k">Sin datos</div><div class="v">0</div></div>';
-            return;
-          }
-          items.forEach(([k, v]) => {
-            const row = document.createElement("div");
-            row.className = "kv-row";
-            row.innerHTML = `<div class="k"></div><div class="v"></div>`;
-            row.children[0].textContent = String(k ?? "");
-            row.children[1].textContent = String(v ?? "");
-            el.appendChild(row);
-          });
-        };
-
         const run = async () => {
           try {
-            ui?.showOverlay?.("Consultando revisiones y descartes...");
-            const r1 = await fetch(apiRevisiones, { headers: { "X-Requested-With": "fetch" } });
-            const j1 = await r1.json();
-            if (!j1?.ok) throw new Error(j1?.error || "Error cargando stats de revisiones.");
-            const d1 = j1.data || {};
-            setText("statTotalRevisiones", d1.total_resultados ?? 0);
-            setText("statTotalDescartes", d1.total_descartes ?? 0);
-            setText("statKoAgentRate", d1.ko_agent_rate ?? "0%");
-            setText("statKoMyRate", d1.ko_my_rate ?? "0%");
-            setText("statDuda", d1.duda_count ?? 0);
-            fillList3("listByStatus", d1.by_status || []);
-            fillList3("listTopAutomatismos", d1.top_automatismos || []);
-            fillList2("listByUser", d1.by_user || []);
-            fillList2("listByDay", d1.by_day || []);
+            ui?.showOverlay?.("Consultando pendientes...");
+            const r = await fetch(api, { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" });
+            let j = null;
+            try {
+              j = await r.json();
+            } catch (err) {
+              throw new Error(`Error HTTP ${r.status || 0} cargando Estad&iacute;sticas MY Review.`);
+            }
+            if (!r.ok || !j?.ok) throw new Error(j?.error || `Error HTTP ${r.status || 0} cargando Estad&iacute;sticas MY Review.`);
+            const d = j.data || {};
+            setText("pillPendingTotal", `Pendientes: ${d.pending_total ?? 0}`);
+            setText("pillPendingLoaded", `Cargados: ${d.pending_loaded ?? 0}`);
+            fillList3("listPendingByTematica", d.pending_by_tematica || []);
+            fillList3("listPendingTopMatriculas", d.pending_top_matriculas || []);
+            fillList3("listPendingMotivo", d.pending_ranking_motivo || []);
           } catch (e) {
-            ui?.showModal?.(String(e?.message || e || "Error cargando estadísticas."));
+            const raw = String(e?.message || e || "Error cargando Estad&iacute;sticas MY Review.");
+            const friendly = /failed to fetch/i.test(raw)
+              ? "No se pudo cargar Estad&iacute;sticas MY Review (timeout o conexi&oacute;n). Prueba a filtrar por semana y reintentar."
+              : raw;
+            ui?.showModal?.(friendly);
           } finally {
             ui?.hideOverlay?.();
           }
@@ -180,3 +151,4 @@
     </script>
   </main>
 {% endblock %}
+

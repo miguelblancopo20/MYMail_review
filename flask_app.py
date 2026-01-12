@@ -1191,6 +1191,32 @@ def create_app() -> Flask:
             session["_error"] = "No autorizado: solo Administrador puede ver Estadisticas."
             return redirect(url_for("review"))
 
+        week_options = _load_week_options()
+        allowed_weeks = {w["key"]: w for w in (week_options or []) if w.get("key")}
+        start_to_key = {w.get("start"): w.get("key") for w in (week_options or []) if w.get("start") and w.get("key")}
+
+        selected_week = (request.args.get("week") or "").strip()
+        selected_week_start = (request.args.get("week_start") or "").strip()
+        if not selected_week and selected_week_start and selected_week_start in start_to_key:
+            selected_week = str(start_to_key[selected_week_start] or "")
+
+        if selected_week and selected_week in allowed_weeks:
+            selected_week_start = allowed_weeks[selected_week]["start"]
+        else:
+            selected_week = ""
+            selected_week_start = ""
+
+        return render_template(
+            "stats.html",
+            title="Estadísticas MY Review",
+            current_user=session.get("user", ""),
+            app_version=app_version,
+            error=session.pop("_error", None),
+            week_options=week_options,
+            selected_week=selected_week,
+            selected_week_start=selected_week_start,
+        )
+
         days = 14
         try:
             days = int(str(request.args.get("days") or days).strip())
